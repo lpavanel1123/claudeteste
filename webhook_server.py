@@ -1,6 +1,12 @@
 import hmac
+import os
+import tempfile
+from pathlib import Path
 from flask import Flask, request, abort
 import email_parser
+import extractor
+import xls_reader
+import extractions
 import storage
 import config
 
@@ -27,7 +33,32 @@ def webhook():
 
     try:
         parsed = email_parser.parse_webhook(request.form, request.files)
+        extracted = extractor.extract_from_body(parsed["body"], parsed["to"])
+
+        attachment = email_parser.find_attachment(request.files)
+        if attachment:
+            suffix = Path(attachment.filename).suffix or ".xls"
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp_path = tmp.name
+            try:
+                attachment.save(tmp_path)
+                xls_data = xls_reader.read_xls(tmp_path)
+            finally:
+                os.unlink(tmp_path)
+
+            extracted["products"] = xls_data["products"]
+            for field in ("requester_name", "department", "cnpj"):
+                if extracted.get(field) == "NA":
+                    extracted[field] = xls_data.get(f"{field}_xls", "NA")
+            if extracted.get("project_ref", "NA") == "NA":
+                extracted["project_ref"] = xls_data.get("project_ref", "NA")
+        else:
+            extracted["products"] = []
+            extracted["project_ref"] = "NA"
+
         storage.save(parsed)
+        extractions.save(parsed, extracted)
+
     except Exception as exc:
         print(f"  [erro ao processar]: {exc}")
         return "500 Internal Error", 500

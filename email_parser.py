@@ -57,3 +57,13 @@ def parse_webhook(form: dict, files: dict) -> dict:
         "body": body,
         "attachments": attachments,
     }
+
+
+def find_attachment(files):
+    """Return the first XLS/XLSX file found in request.files, regardless of field name."""
+    for file in files.values():
+        if hasattr(file, "filename") and file.filename:
+            ext = file.filename.rsplit(".", 1)[-1].lower()
+            if ext in ("xls", "xlsx"):
+                return file
+    return None
