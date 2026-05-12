@@ -20,6 +20,11 @@ def too_large(e):
     return "413 Payload Too Large", 413
 
 
+@app.route("/health", methods=["GET"])
+def health():
+    return "OK", 200
+
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     token = request.args.get("token", "")
