@@ -1,4 +1,5 @@
 import json
+import uuid
 from pathlib import Path
 
 EXTRACTIONS_FILE = "extractions.json"
@@ -9,6 +10,7 @@ def save(parsed_email: dict, extracted: dict) -> None:
     entries = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
 
     entry = {
+        "id":      str(uuid.uuid4()),
         "date":    parsed_email["date"],
         "from":    parsed_email["from"],
         "subject": parsed_email["subject"],

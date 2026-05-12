@@ -1,0 +1,54 @@
+body { background: #f0f2f5; }
+
+/* ── Layout ── */
+.wrapper { display: flex; padding-top: 56px; min-height: 100vh; }
+
+.sidebar {
+  width: 230px; min-height: calc(100vh - 56px);
+  background: #1a1d23; position: fixed; top: 56px; bottom: 0;
+  padding: 1.25rem 0; overflow-y: auto;
+}
+.sidebar .nav-link {
+  color: #9ba3af; padding: .7rem 1.5rem;
+  font-size: .92rem; border-radius: 0; transition: all .15s;
+  display: flex; align-items: center; gap: .6rem;
+}
+.sidebar .nav-link:hover, .sidebar .nav-link.active {
+  color: #fff; background: #0d6efd;
+}
+.sidebar .section-label {
+  color: #4b5563; font-size: .72rem; text-transform: uppercase;
+  letter-spacing: .08em; padding: 1rem 1.5rem .3rem;
+}
+
+.content { margin-left: 230px; padding: 2rem; flex: 1; }
+
+/* ── KPI Cards ── */
+.kpi-card { border: none; border-radius: 14px; transition: transform .2s, box-shadow .2s; }
+.kpi-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,.12) !important; }
+.kpi-icon { font-size: 2.2rem; opacity: .75; }
+
+/* ── Charts ── */
+.chart-card { border: none; border-radius: 14px; }
+.chart-card .card-header { background: #fff; border-bottom: 1px solid #e9ecef; border-radius: 14px 14px 0 0 !important; font-weight: 600; font-size: .9rem; }
+
+/* ── Tables ── */
+.table th { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; }
+.table tbody tr { transition: background .1s; }
+.table-hover tbody tr:hover { background: #f0f6ff; cursor: pointer; }
+
+/* ── Badges ── */
+.badge-status { font-size: .78rem; padding: .35em .7em; border-radius: 20px; }
+
+/* ── Detail page ── */
+.field-group { background: #f8f9fa; border-radius: 10px; padding: 1rem 1.25rem; }
+.field-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; margin-bottom: .1rem; }
+.field-value { font-size: .95rem; font-weight: 500; word-break: break-word; }
+
+/* ── Login ── */
+.login-card { max-width: 400px; border: none; border-radius: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.1); }
+.login-logo { font-size: 2.5rem; color: #0d6efd; }
+
+/* ── Misc ── */
+.navbar-brand { font-weight: 700; letter-spacing: .02em; }
+.page-title { font-size: 1.25rem; font-weight: 700; color: #1a1d23; }

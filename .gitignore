@@ -3,3 +3,4 @@ __pycache__/
 inbox.md
 .env
 extractions.json
+data/
