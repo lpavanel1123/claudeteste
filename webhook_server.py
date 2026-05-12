@@ -1,34 +1,25 @@
 import hmac
-import hashlib
 from flask import Flask, request, abort
 import email_parser
 import storage
 import config
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
 
 
-def _verify_signature(token: str, timestamp: str, signature: str) -> bool:
-    if not config.MAILGUN_SIGNING_KEY:
-        return True  # skip verification when key not configured
-    value = (timestamp + token).encode("utf-8")
-    digest = hmac.new(
-        key=config.MAILGUN_SIGNING_KEY.encode("utf-8"),
-        msg=value,
-        digestmod=hashlib.sha256,
-    ).hexdigest()
-    return hmac.compare_digest(digest, signature)
+@app.errorhandler(413)
+def too_large(e):
+    print("  [rejeitado] payload acima de 1 MB")
+    return "413 Payload Too Large", 413
 
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    token = request.form.get("token", "")
-    timestamp = request.form.get("timestamp", "")
-    signature = request.form.get("signature", "")
-
-    if not _verify_signature(token, timestamp, signature):
-        print("  [aviso] assinatura inválida — requisição rejeitada")
-        abort(406)
+    token = request.args.get("token", "")
+    if config.WEBHOOK_SECRET_TOKEN and not hmac.compare_digest(token, config.WEBHOOK_SECRET_TOKEN):
+        print("  [rejeitado] token inválido")
+        abort(403)
 
     sender = request.form.get("from", "?")
     recipient = request.form.get("To") or request.form.get("to", "?")

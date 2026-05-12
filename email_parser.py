@@ -3,6 +3,8 @@ import re
 import email.utils
 from datetime import datetime
 
+_MAX_ATTACHMENTS = 20
+
 
 def _html_to_text(html_content: str) -> str:
     text = html.unescape(html_content)
@@ -14,11 +16,15 @@ def _html_to_text(html_content: str) -> str:
     return text.strip()
 
 
+def _sanitize(value: str) -> str:
+    """Remove newlines and tabs that could break Markdown structure."""
+    return re.sub(r"[\r\n\t]", " ", value).strip()
+
+
 def parse_webhook(form: dict, files: dict) -> dict:
-    """Parse Mailgun inbound webhook payload (multipart/form-data)."""
-    subject = form.get("subject", "(sem assunto)")
-    sender = form.get("from", "desconhecido")
-    recipient = form.get("To") or form.get("to", "")
+    subject = _sanitize(form.get("subject", "(sem assunto)"))
+    sender = _sanitize(form.get("from", "desconhecido"))
+    recipient = _sanitize(form.get("To") or form.get("to", ""))
 
     date_raw = form.get("Date") or form.get("date", "")
     try:
@@ -36,12 +42,12 @@ def parse_webhook(form: dict, files: dict) -> dict:
         if body_html:
             body = _html_to_text(body_html)
 
-    attachment_count = int(form.get("attachment-count", 0))
+    attachment_count = min(int(form.get("attachment-count", 0)), _MAX_ATTACHMENTS)
     attachments = []
     for i in range(1, attachment_count + 1):
         file = files.get(f"attachment-{i}")
         if file and file.filename:
-            attachments.append(file.filename)
+            attachments.append(_sanitize(file.filename))
 
     return {
         "subject": subject,

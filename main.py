@@ -9,8 +9,8 @@ def main():
     print(f"  Endereço monitorado : {config.EMAIL_ADDRESS}")
     print(f"  Webhook local       : http://localhost:{config.WEBHOOK_PORT}/webhook")
     print(f"  Arquivo de saída    : {config.INBOX_FILE}")
-    if not config.MAILGUN_SIGNING_KEY:
-        print("  [aviso] MAILGUN_SIGNING_KEY não configurada — sem verificação de assinatura")
+    if not config.WEBHOOK_SECRET_TOKEN:
+        print("  [aviso] WEBHOOK_SECRET_TOKEN não configurado — webhook sem autenticação")
     print("=" * 55)
     print("  Aguardando emails... (Ctrl+C para encerrar)\n")
 
