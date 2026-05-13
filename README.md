@@ -1,30 +1,43 @@
-# Receptor de Email
+# Portal de Cotações — Cisco Procurement Portal
 
-Servidor webhook em Python que recebe emails enviados para um endereço Cloudmailin e os salva automaticamente em um arquivo Markdown (`inbox.md`), com os emails mais recentes sempre no topo.
+Sistema completo para **recebimento, extração e gestão de cotações** enviadas por email. Recebe emails via Cloudmailin, extrai dados estruturados do corpo e do anexo XLS, e disponibiliza um portal web com dashboard, gráficos e gestão manual das cotações.
 
-## Como funciona
+---
+
+## Arquitetura geral
 
 ```
 Gmail / qualquer remetente
         │
         ▼
-  Cloudmailin (recebe o email e faz POST)
+  Cloudmailin (recebe e faz POST via webhook)
         │
         ▼
-  Serveo / túnel SSH (expõe o servidor local)
-        │
-        ▼
-  Flask (localhost:8025/webhook)
-        │
-        ▼
-     inbox.md
+  Serveo SSH tunnel  →  Flask Webhook (porta 8025)
+                              │
+                    ┌─────────┴─────────┐
+                    ▼                   ▼
+              extractor.py          xls_reader.py
+          (corpo do email)         (anexo XLS/XLSX)
+                    │                   │
+                    └─────────┬─────────┘
+                              ▼
+                    extractions.json + inbox.md
+                              │
+                              ▼
+                   Portal Web Flask (porta 8080)
+                   Dashboard · Cotações · Histórico
 ```
+
+---
 
 ## Pré-requisitos
 
 - Python 3.8+
 - Conta gratuita no [Cloudmailin](https://cloudmailin.com)
-- Acesso SSH (já vem no macOS/Linux)
+- Acesso SSH (nativo no macOS/Linux)
+
+---
 
 ## Instalação
 
@@ -32,97 +45,190 @@ Gmail / qualquer remetente
 pip3 install -r requirements.txt
 ```
 
+### Dependências
+
+| Pacote | Uso |
+|---|---|
+| `flask` | Servidor web (webhook + portal) |
+| `python-dotenv` | Variáveis de ambiente via `.env` |
+| `xlrd` | Leitura de arquivos `.xls` legados |
+| `openpyxl` | Leitura de arquivos `.xlsx` |
+
+---
+
 ## Configuração
 
-Edite o arquivo `config.py`:
+Copie o modelo e preencha:
 
-```python
-EMAIL_ADDRESS = "seu-endereco@cloudmailin.net"  # endereço fornecido pelo Cloudmailin
-MAILGUN_SIGNING_KEY = ""                         # deixe vazio ao usar Cloudmailin
-WEBHOOK_HOST = "0.0.0.0"
-WEBHOOK_PORT = 8025
-INBOX_FILE = "inbox.md"
+```bash
+cp .env.example .env
 ```
 
-## Como usar
+```dotenv
+EMAIL_ADDRESS=seu-endereco@cloudmailin.net
+WEBHOOK_SECRET_TOKEN=gere-com-python3-c-import-secrets-print-secrets.token_urlsafe-32
+WEBHOOK_PORT=8025
 
-### 1. Inicie o servidor (Terminal 1)
+PORTAL_PORT=8080
+PORTAL_SECRET_KEY=gere-outro-token-aqui
+```
+
+> **Gerar tokens seguros:**
+> ```bash
+> python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+> ```
+
+---
+
+## Como executar
+
+### Terminal 1 — Servidor de webhook
 
 ```bash
 python3 main.py
 ```
 
-Saída esperada:
-```
-=======================================================
-  Receptor de Email — Mailgun Webhook
-=======================================================
-  Endereço monitorado : seu-endereco@cloudmailin.net
-  Webhook local       : http://localhost:8025/webhook
-  Arquivo de saída    : inbox.md
-=======================================================
-  Aguardando emails... (Ctrl+C para encerrar)
-```
-
-### 2. Abra o túnel SSH (Terminal 2)
+### Terminal 2 — Portal web
 
 ```bash
-ssh -R 80:localhost:8025 serveo.net
+python3 portal.py
 ```
 
-O serveo exibirá uma URL pública, por exemplo:
-```
-Forwarding HTTP traffic from https://abcdef.serveo.net
+Acesse **http://localhost:8080** → login com `admin` / `admin123`
+*(altere a senha após o primeiro acesso)*
+
+### Terminal 3 — Túnel SSH para receber emails externos
+
+```bash
+./tunnel.sh
 ```
 
-### 3. Configure o Cloudmailin
+O script exibe a URL pública (ex: `https://abcdef.serveo.net`) e reconecta automaticamente se cair.
+
+### Terminal 4 — Heartbeat opcional (mantém o túnel ativo)
+
+```bash
+python3 heartbeat.py
+```
+
+Faz ping em `/health` a cada 4 minutos para evitar que o túnel seja desligado por inatividade.
+
+---
+
+## Configuração do Cloudmailin
 
 No painel do Cloudmailin:
 - **Addresses** → selecione seu endereço
-- **Target URL** → `https://abcdef.serveo.net/webhook`
+- **Target URL** → `https://abcdef.serveo.net/webhook?token=SEU_TOKEN`
 - **Format** → `Multipart`
 
-### 4. Envie um email
-
-Envie qualquer email do Gmail (ou outro cliente) para o seu endereço `@cloudmailin.net`.
-
-O email será salvo automaticamente no arquivo `inbox.md`.
-
-## Estrutura do inbox.md
-
-Cada email recebido é adicionado ao topo do arquivo no formato:
-
-```markdown
-# Caixa de Entrada — seu-endereco@cloudmailin.net
+> O `?token=` é obrigatório — requisições sem token são bloqueadas com 403.
 
 ---
-## [2026-05-12 17:30:00] Assunto do email
-**De:** remetente@gmail.com
-**Para:** seu-endereco@cloudmailin.net
-**Data:** 2026-05-12 17:30:00
 
-Corpo do email aqui...
+## Portal web
 
-> **Anexos:** arquivo.pdf, imagem.png
+| Tela | Funcionalidade |
+|---|---|
+| **Dashboard** | 4 KPIs (total, valor R$, em aberto, fechadas) + 4 gráficos Chart.js com atualização automática a cada 5s |
+| **Cotações** | Lista filtrável por tipo, status e busca livre; badge para dados de treinamento |
+| **Detalhe** | Dados extraídos automaticamente + formulário de edição manual + tabela de produtos |
+| **Corrigir** | Botão inline para corrigir campos auto-extraídos com histórico completo de versões |
+| **Histórico** | Log de auditoria de toda alteração manual ou correção, filtrável por usuário |
+
+### Campos extraídos automaticamente
+
+| Campo | Fonte |
+|---|---|
+| Tipo (Cotação / Pedido) | Palavras-chave no corpo |
+| Tipo de projeto (Novo / Obsolescência) | Palavras-chave no corpo |
+| Requisitante + Departamento | Bloco de assinatura |
+| CNPJ | Regex no corpo |
+| Smart Account / Virtual Account / Domain ID | Labels no corpo |
+| Produtos (Qtd + Part Number + Descrição) | Anexo XLS/XLSX |
+
+### Campos manuais (editáveis no portal)
+
+`valor_total` · `status` · `responsavel_interno` · `fornecedor` · `observacoes`
+
+### Status disponíveis
+
+`Em Aberto` · `Em Análise` · `Aprovada` · `Rejeitada` · `Ganha` · `Perdida`
+
+---
+
+## Dados de treinamento
+
+Para popular o portal com dados realistas de teste:
+
+```bash
+python3 seed_data.py
 ```
+
+Gera 28 cotações marcadas como `is_training: true` com equipamentos Cisco reais
+(switches Catalyst/Nexus, firewalls Firepower, APs) e empresas brasileiras (Vale, Petrobras, Eletrobras…).
+
+---
 
 ## Estrutura do projeto
 
 ```
-├── main.py            # Ponto de entrada — inicia o servidor Flask
-├── webhook_server.py  # Servidor Flask que recebe os POSTs do Cloudmailin
-├── email_parser.py    # Extrai remetente, assunto, corpo e anexos do webhook
-├── storage.py         # Salva os emails no inbox.md
-├── config.py          # Configurações (endereço, porta, arquivo de saída)
-├── requirements.txt   # Dependências Python
-└── inbox.md           # Gerado automaticamente com os emails recebidos
+├── main.py               # Inicia o servidor de webhook (porta 8025)
+├── portal.py             # Inicia o portal web (porta 8080)
+├── webhook_server.py     # Flask: recebe POSTs do Cloudmailin
+├── email_parser.py       # Parse do payload multipart + detecção de anexos
+├── extractor.py          # Extrai campos estruturados do corpo do email
+├── xls_reader.py         # Lê XLS/XLSX e extorna produtos + metadados
+├── extractions.py        # Persiste em extractions.json (com UUID por entrada)
+├── storage.py            # Persiste email bruto em inbox.md
+├── data_store.py         # Leitura/escrita de todos os JSONs do portal
+├── config.py             # Configurações via variáveis de ambiente
+├── seed_data.py          # Gerador de dados de treinamento
+├── tunnel.sh             # Túnel SSH com auto-reconexão
+├── heartbeat.py          # Ping periódico para manter túnel ativo
+├── requirements.txt      # Dependências Python
+├── .env.example          # Modelo de variáveis de ambiente
+│
+├── templates/            # Templates Jinja2 (Bootstrap 5 + Chart.js)
+│   ├── base.html         # Layout com sidebar e navbar estilo Cisco
+│   ├── login.html        # Tela de login
+│   ├── dashboard.html    # Dashboard com KPIs e 4 gráficos
+│   ├── quotes.html       # Lista de cotações com filtros
+│   ├── quote_detail.html # Detalhe + edição manual + correção de dados
+│   └── logs.html         # Histórico de alterações
+│
+├── static/style.css      # Design system Cisco (paleta #005073/#049FD9/#00BCEB)
+│
+└── data/                 # Gerado em runtime — NÃO versionado
+    ├── users.json        # Usuários com senha em hash (werkzeug)
+    ├── annotations.json  # Campos manuais por cotação
+    ├── corrections.json  # Correções de dados auto-extraídos com histórico
+    └── audit_log.json    # Log de toda alteração
 ```
+
+---
+
+## Segurança
+
+| Medida | Implementação |
+|---|---|
+| Autenticação do webhook | Token secreto na URL (`?token=...`) verificado com `hmac.compare_digest` |
+| Limite de payload | 1 MB máximo por requisição |
+| Sanitização de inputs | Newlines/tabs removidos de campos antes de salvar |
+| `attachment-count` limitado | Máximo 20 anexos por email |
+| Senhas em hash | `werkzeug.security.generate_password_hash` |
+| Credenciais fora do código | Todas as chaves em `.env` (gitignored) |
+
+---
 
 ## Solução de problemas
 
-| Erro | Causa | Solução |
+| Sintoma | Causa | Solução |
 |---|---|---|
-| `502 Bad Gateway` | Servidor Flask não está rodando | Execute `python3 main.py` |
-| `406` no Flask | Chave de assinatura incompatível | Deixe `MAILGUN_SIGNING_KEY = ""` no `config.py` |
-| Email rejeitado (5.7.1) | Domínio sandbox não aceita inbound | Use Cloudmailin em vez de Mailgun sandbox |
-| Serveo cai | Instabilidade do serviço | Reconecte com `ssh -R 80:localhost:8025 serveo.net` |
+| `502 Bad Gateway` | Servidor Flask parado | `python3 main.py` |
+| `403` no webhook | Token ausente ou incorreto | Verifique `WEBHOOK_SECRET_TOKEN` no `.env` e na URL do Cloudmailin |
+| `406` no Flask | Chave de assinatura incompatível | Deixe `MAILGUN_SIGNING_KEY = ""` (não usado com Cloudmailin) |
+| Email rejeitado (5.7.1) | Domínio sandbox Mailgun não aceita inbound | Use Cloudmailin |
+| Túnel cai | Instabilidade do serveo | Use `./tunnel.sh` (auto-reconexão automática) |
+| Portal não atualiza | Polling parado | Verifique o console do browser (F12) |
+| Produtos não extraídos | Formato XLS diferente do padrão | Verifique se a tabela tem colunas "Qtd" e "Part" |
