@@ -1,54 +1,148 @@
-body { background: #f0f2f5; }
+/* ══════════════════════════════════════════════════════════
+   Portal de Cotações — Cisco-inspired Design System
+   Palette: Cisco Blue #005073 · Bright #049FD9 · Teal #00BCEB
+   ══════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --cisco:        #005073;
+  --cisco-bright: #049FD9;
+  --cisco-teal:   #00BCEB;
+  --cisco-green:  #6cc04a;
+  --cisco-warn:   #ffbe00;
+  --cisco-red:    #e2231a;
+  --cisco-dark:   #1c1c2e;
+  --cisco-nav:    #0d1b2a;
+  --bg:           #f0f4f8;
+  --card:         #ffffff;
+  --border:       #dde3ea;
+  --text:         #1a2335;
+  --muted:        #6b778c;
+  --sidebar-w:    230px;
+}
+
+*, body { font-family: 'Inter', system-ui, sans-serif; }
+body    { background: var(--bg); color: var(--text); }
+
+/* ── Utility classes ── */
+.text-cisco        { color: var(--cisco) !important; }
+.text-cisco-bright { color: var(--cisco-bright) !important; }
+.text-cisco-teal   { color: var(--cisco-teal) !important; }
+.bg-cisco          { background: var(--cisco) !important; }
+.bg-cisco-bright   { background: var(--cisco-bright) !important; }
+.btn-cisco         { background: var(--cisco); color: #fff; border: none; }
+.btn-cisco:hover   { background: #00394f; color: #fff; }
 
 /* ── Layout ── */
 .wrapper { display: flex; padding-top: 56px; min-height: 100vh; }
 
+/* ── Navbar ── */
+.navbar.cisco-navbar {
+  background: var(--cisco-nav) !important;
+  border-bottom: 2px solid var(--cisco-bright);
+  height: 56px;
+}
+.cisco-logo-bar {
+  width: 4px; height: 28px; background: var(--cisco-bright);
+  border-radius: 2px; display: inline-block; margin-right: 10px;
+}
+
+/* ── Sidebar ── */
 .sidebar {
-  width: 230px; min-height: calc(100vh - 56px);
-  background: #1a1d23; position: fixed; top: 56px; bottom: 0;
-  padding: 1.25rem 0; overflow-y: auto;
-}
-.sidebar .nav-link {
-  color: #9ba3af; padding: .7rem 1.5rem;
-  font-size: .92rem; border-radius: 0; transition: all .15s;
-  display: flex; align-items: center; gap: .6rem;
-}
-.sidebar .nav-link:hover, .sidebar .nav-link.active {
-  color: #fff; background: #0d6efd;
+  width: var(--sidebar-w); min-height: calc(100vh - 56px);
+  background: var(--cisco-nav); position: fixed; top: 56px; bottom: 0;
+  padding: .75rem 0; overflow-y: auto;
+  border-right: 1px solid rgba(255,255,255,.06);
 }
 .sidebar .section-label {
-  color: #4b5563; font-size: .72rem; text-transform: uppercase;
-  letter-spacing: .08em; padding: 1rem 1.5rem .3rem;
+  color: rgba(255,255,255,.3); font-size: .68rem; text-transform: uppercase;
+  letter-spacing: .1em; padding: 1.1rem 1.4rem .4rem;
+}
+.sidebar .nav-link {
+  color: rgba(255,255,255,.55); padding: .65rem 1.4rem;
+  font-size: .88rem; border-radius: 0; transition: all .15s;
+  display: flex; align-items: center; gap: .65rem;
+  border-left: 3px solid transparent;
+}
+.sidebar .nav-link:hover {
+  color: #fff; background: rgba(4,159,217,.15);
+  border-left-color: var(--cisco-bright);
+}
+.sidebar .nav-link.active {
+  color: #fff; background: rgba(4,159,217,.2);
+  border-left-color: var(--cisco-bright);
+  font-weight: 600;
 }
 
-.content { margin-left: 230px; padding: 2rem; flex: 1; }
+/* ── Main content ── */
+.content { margin-left: var(--sidebar-w); padding: 2rem; flex: 1; }
+
+/* ── Cards ── */
+.cisco-card {
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06) !important;
+}
+.cisco-card .card-header {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  border-radius: 8px 8px 0 0 !important;
+  padding: .85rem 1.25rem;
+  font-size: .88rem; font-weight: 600; color: var(--text);
+}
 
 /* ── KPI Cards ── */
-.kpi-card { border: none; border-radius: 14px; transition: transform .2s, box-shadow .2s; }
-.kpi-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,.12) !important; }
-.kpi-icon { font-size: 2.2rem; opacity: .75; }
+.kpi-card {
+  border: none !important; border-radius: 8px !important;
+  border-left: 4px solid transparent !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08) !important;
+  transition: box-shadow .2s, transform .15s;
+}
+.kpi-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.12) !important; transform: translateY(-2px); }
+.kpi-primary   { border-left-color: var(--cisco-bright) !important; }
+.kpi-success   { border-left-color: var(--cisco-green)  !important; }
+.kpi-warning   { border-left-color: var(--cisco-warn)   !important; }
+.kpi-secondary { border-left-color: var(--muted)        !important; }
+.kpi-icon { font-size: 2rem; }
 
 /* ── Charts ── */
-.chart-card { border: none; border-radius: 14px; }
-.chart-card .card-header { background: #fff; border-bottom: 1px solid #e9ecef; border-radius: 14px 14px 0 0 !important; font-weight: 600; font-size: .9rem; }
+.chart-card { border: 1px solid var(--border); border-radius: 8px; }
+.chart-card .card-header {
+  background: var(--card); border-bottom: 1px solid var(--border);
+  font-size: .84rem; font-weight: 600; padding: .75rem 1.1rem;
+  display: flex; align-items: center; gap: .5rem;
+}
+.chart-card .card-header::before {
+  content: ''; display: inline-block; width: 3px; height: 16px;
+  background: var(--cisco-bright); border-radius: 2px;
+}
 
 /* ── Tables ── */
-.table th { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; }
+.table th {
+  font-size: .75rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); font-weight: 600; background: #f8fafc;
+  border-bottom: 2px solid var(--cisco-bright) !important;
+}
 .table tbody tr { transition: background .1s; }
-.table-hover tbody tr:hover { background: #f0f6ff; cursor: pointer; }
+.table-hover tbody tr:hover { background: #eef6fb; cursor: pointer; }
 
 /* ── Badges ── */
-.badge-status { font-size: .78rem; padding: .35em .7em; border-radius: 20px; }
+.badge-status { font-size: .75rem; padding: .3em .65em; border-radius: 4px; font-weight: 500; }
+.badge-training { background: #fff3cd; color: #856404; font-size: .72rem; border: 1px solid #ffd85e; border-radius: 4px; padding: .2em .5em; }
 
-/* ── Detail page ── */
-.field-group { background: #f8f9fa; border-radius: 10px; padding: 1rem 1.25rem; }
-.field-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; margin-bottom: .1rem; }
-.field-value { font-size: .95rem; font-weight: 500; word-break: break-word; }
+/* ── Detail fields ── */
+.field-group { background: #f8fafc; border: 1px solid var(--border); border-radius: 6px; padding: .75rem 1rem; }
+.field-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: .2rem; font-weight: 600; }
+.field-value { font-size: .9rem; font-weight: 500; word-break: break-word; }
 
 /* ── Login ── */
-.login-card { max-width: 400px; border: none; border-radius: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.1); }
-.login-logo { font-size: 2.5rem; color: #0d6efd; }
+.login-card { max-width: 420px; border: 1px solid var(--border) !important; border-radius: 12px !important; box-shadow: 0 8px 32px rgba(0,0,0,.1) !important; }
+.login-logo-bar { width: 48px; height: 4px; background: var(--cisco-bright); border-radius: 2px; margin: 0 auto .75rem; }
+
+/* ── Page title ── */
+.page-title { font-size: 1.15rem; font-weight: 700; color: var(--text); }
 
 /* ── Misc ── */
-.navbar-brand { font-weight: 700; letter-spacing: .02em; }
-.page-title { font-size: 1.25rem; font-weight: 700; color: #1a1d23; }
+.navbar-brand { font-weight: 700; letter-spacing: .01em; font-size: .95rem; }
+code { color: var(--cisco-bright); background: rgba(4,159,217,.08); padding: .1em .35em; border-radius: 3px; font-size: .85em; }

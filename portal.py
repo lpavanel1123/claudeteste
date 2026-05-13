@@ -99,8 +99,22 @@ def quote_detail(quote_id):
     quote = next((q for q in data_store.load_extractions() if q["id"] == quote_id), None)
     if not quote:
         return "Cotação não encontrada", 404
-    ann = data_store.load_annotations().get(quote_id, {})
-    return render_template("quote_detail.html", quote=quote, ann=ann, statuses=STATUSES)
+    ann  = data_store.load_annotations().get(quote_id, {})
+    corr = data_store.load_corrections().get(quote_id, {})
+    return render_template("quote_detail.html", quote=quote, ann=ann, corr=corr,
+                           statuses=STATUSES, correctable=data_store.CORRECTABLE_FIELDS)
+
+
+@app.route("/quotes/<quote_id>/correct", methods=["POST"])
+@login_required
+def quote_correct(quote_id):
+    quote = next((q for q in data_store.load_extractions() if q["id"] == quote_id), None)
+    if not quote:
+        return "Cotação não encontrada", 404
+    fields = {f: request.form.get(f, "").strip() for f in data_store.CORRECTABLE_FIELDS}
+    data_store.save_correction(quote_id, quote.get("subject", ""), fields, session["user"])
+    flash("Dados extraídos corrigidos com sucesso!", "success")
+    return redirect(url_for("quote_detail", quote_id=quote_id))
 
 
 @app.route("/quotes/<quote_id>/edit", methods=["POST"])

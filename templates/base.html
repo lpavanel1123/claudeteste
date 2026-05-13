@@ -10,23 +10,27 @@
 </head>
 <body>
 
-<!-- Navbar -->
-<nav class="navbar navbar-dark bg-dark fixed-top shadow-sm px-3">
-  <a class="navbar-brand" href="/"><i class="fa-solid fa-envelope-open-text me-2 text-primary"></i>Portal de Cotações</a>
+<!-- Cisco-style Navbar -->
+<nav class="navbar cisco-navbar fixed-top px-3">
+  <div class="d-flex align-items-center gap-2">
+    <span class="cisco-logo-bar"></span>
+    <a class="navbar-brand text-white" href="/">Portal de Cotações</a>
+    <span class="badge bg-cisco-bright text-white ms-1" style="font-size:.65rem;padding:.25em .55em;border-radius:3px">BETA</span>
+  </div>
   <div class="d-flex align-items-center gap-3">
     <span class="text-secondary small"><i class="fa fa-user me-1"></i>{{ session.user }}</span>
-    <a href="/logout" class="btn btn-sm btn-outline-secondary">Sair</a>
+    <a href="/logout" class="btn btn-sm" style="color:#aaa;border:1px solid #333">Sair</a>
   </div>
 </nav>
 
 <div class="wrapper">
   <!-- Sidebar -->
   <nav class="sidebar">
-    <div class="section-label">Menu</div>
+    <div class="section-label">Navegação</div>
     <ul class="nav flex-column">
       <li class="nav-item">
         <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="/">
-          <i class="fa-solid fa-chart-pie fa-fw"></i> Dashboard
+          <i class="fa-solid fa-chart-line fa-fw"></i> Dashboard
         </a>
       </li>
       <li class="nav-item">
@@ -40,13 +44,21 @@
         </a>
       </li>
     </ul>
+    <div class="section-label mt-3">Sistema</div>
+    <ul class="nav flex-column">
+      <li class="nav-item">
+        <a class="nav-link text-muted" href="/logout" style="font-size:.83rem">
+          <i class="fa fa-right-from-bracket fa-fw"></i> Sair
+        </a>
+      </li>
+    </ul>
   </nav>
 
   <!-- Content -->
   <main class="content">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for cat, msg in messages %}
-        <div class="alert alert-{{ cat }} alert-dismissible fade show shadow-sm" role="alert">
+        <div class="alert alert-{{ cat }} alert-dismissible fade show py-2 small shadow-sm" role="alert">
           {{ msg }}
           <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>

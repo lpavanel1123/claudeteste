@@ -5,58 +5,100 @@
 <div class="d-flex align-items-center gap-2 mb-4">
   <a href="/quotes" class="btn btn-sm btn-outline-secondary"><i class="fa fa-arrow-left"></i></a>
   <h5 class="page-title mb-0">{{ quote.subject | truncate(60) }}</h5>
+  {% if quote.get('is_training') %}
+    <span class="badge bg-warning text-dark ms-1"><i class="fa fa-flask me-1"></i>Dados de Treinamento</span>
+  {% endif %}
 </div>
 
 <div class="row g-4">
-  <!-- Dados extraídos (leitura) -->
+  <!-- Dados extraídos (com correção inline) -->
   <div class="col-lg-6">
-    <div class="card shadow-sm h-100" style="border:none;border-radius:14px">
-      <div class="card-header bg-white fw-semibold" style="border-radius:14px 14px 0 0">
-        <i class="fa fa-robot me-2 text-primary"></i>Dados Extraídos Automaticamente
+    <div class="card shadow-sm h-100 cisco-card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="fa fa-robot me-2 text-cisco-bright"></i>Dados Extraídos Automaticamente</span>
+        <button class="btn btn-sm btn-outline-warning" id="btn-edit-extracted" onclick="toggleCorrection()">
+          <i class="fa fa-pen me-1"></i>Corrigir
+        </button>
       </div>
-      <div class="card-body">
+
+      <!-- Visualização -->
+      <div class="card-body" id="view-extracted">
+        {% set labels = {
+          'requester_name': 'Requisitante', 'department': 'Departamento',
+          'request_type': 'Tipo', 'project_type': 'Projeto',
+          'cnpj': 'CNPJ', 'smart_account': 'Smart Account',
+          'smart_account_domain': 'Domain ID', 'virtual_account': 'Virtual Account',
+          'project_ref': 'Ref. Projeto'
+        } %}
         <div class="row g-3">
-          {% set fields = [
-            ('Remetente',      quote['from']),
-            ('Para',           quote.recipient),
-            ('Data',           quote.date),
-            ('Tipo',           quote.request_type),
-            ('Projeto',        quote.project_type),
-            ('Requisitante',   quote.requester_name),
-            ('Departamento',   quote.department),
-            ('CNPJ',           quote.cnpj),
-            ('Smart Account',  quote.smart_account),
-            ('Domain ID',      quote.smart_account_domain),
-            ('Virtual Account',quote.virtual_account),
-            ('Ref. Projeto',   quote.project_ref),
-          ] %}
-          {% for label, val in fields %}
+          {% for field, label in labels.items() %}
+          {% set auto_val = quote.get(field, 'NA') %}
+          {% set corr_val = corr.get(field, {}).get('current') %}
+          {% set hist = corr.get(field, {}).get('history', []) %}
           <div class="col-12 col-sm-6">
             <div class="field-group">
               <div class="field-label">{{ label }}</div>
-              <div class="field-value">{{ val if val and val != 'NA' else '—' }}</div>
+              {% if corr_val %}
+                <div class="field-value text-cisco-bright fw-bold">{{ corr_val }}</div>
+                <div class="small text-muted mt-1">
+                  <i class="fa fa-robot fa-xs"></i> Auto: <s class="opacity-50">{{ auto_val if auto_val and auto_val != 'NA' else '—' }}</s>
+                  {% if hist %}
+                    <span class="ms-1 text-muted">({{ hist|length }} vers.)</span>
+                  {% endif %}
+                </div>
+              {% else %}
+                <div class="field-value">{{ auto_val if auto_val and auto_val != 'NA' else '—' }}</div>
+              {% endif %}
             </div>
           </div>
           {% endfor %}
         </div>
+      </div>
+
+      <!-- Formulário de correção (oculto por padrão) -->
+      <div class="card-body border-top" id="form-correction" style="display:none">
+        <div class="alert alert-warning py-2 small mb-3">
+          <i class="fa fa-triangle-exclamation me-1"></i>
+          Ao salvar, os valores anteriores ficam registrados no histórico.
+        </div>
+        <form method="POST" action="/quotes/{{ quote.id }}/correct">
+          <div class="row g-2">
+            {% for field, label in labels.items() %}
+            {% set corr_val = corr.get(field, {}).get('current') %}
+            {% set auto_val = quote.get(field, '') %}
+            <div class="col-12 col-sm-6">
+              <label class="form-label small fw-semibold mb-1">{{ label }}</label>
+              <input type="text" name="{{ field }}" class="form-control form-control-sm"
+                value="{{ corr_val if corr_val else (auto_val if auto_val and auto_val != 'NA' else '') }}"
+                placeholder="{{ auto_val if auto_val and auto_val != 'NA' else '—' }}">
+            </div>
+            {% endfor %}
+          </div>
+          <div class="d-flex gap-2 mt-3">
+            <button type="submit" class="btn btn-warning btn-sm">
+              <i class="fa fa-save me-1"></i>Salvar Correções
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleCorrection()">Cancelar</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
 
   <!-- Edição manual -->
   <div class="col-lg-6">
-    <div class="card shadow-sm h-100" style="border:none;border-radius:14px">
-      <div class="card-header bg-white fw-semibold" style="border-radius:14px 14px 0 0">
-        <i class="fa fa-pencil me-2 text-warning"></i>Informações Manuais
+    <div class="card shadow-sm h-100 cisco-card">
+      <div class="card-header">
+        <i class="fa fa-pencil me-2 text-cisco-teal"></i>Informações Manuais
         {% if ann.updated_at %}
-          <small class="text-muted fw-normal ms-2">Última edição: {{ ann.updated_at }} por {{ ann.updated_by }}</small>
+          <small class="text-muted fw-normal ms-2">{{ ann.updated_at }} por {{ ann.updated_by }}</small>
         {% endif %}
       </div>
       <div class="card-body">
         <form method="POST" action="/quotes/{{ quote.id }}/edit">
           <div class="mb-3">
             <label class="form-label small fw-semibold">Valor Total (R$)</label>
-            <div class="input-group">
+            <div class="input-group input-group-sm">
               <span class="input-group-text">R$</span>
               <input type="text" name="valor_total" class="form-control"
                 placeholder="0,00"
@@ -65,7 +107,7 @@
           </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold">Status</label>
-            <select name="status" class="form-select">
+            <select name="status" class="form-select form-select-sm">
               {% for s in statuses %}
                 <option {% if ann.get('status', 'Em Aberto') == s %}selected{% endif %}>{{ s }}</option>
               {% endfor %}
@@ -73,21 +115,20 @@
           </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold">Responsável Interno</label>
-            <input type="text" name="responsavel_interno" class="form-control"
-              placeholder="Nome do responsável" value="{{ ann.get('responsavel_interno','') }}">
+            <input type="text" name="responsavel_interno" class="form-control form-control-sm"
+              value="{{ ann.get('responsavel_interno','') }}">
           </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold">Fornecedor</label>
-            <input type="text" name="fornecedor" class="form-control"
-              placeholder="Nome do fornecedor" value="{{ ann.get('fornecedor','') }}">
+            <input type="text" name="fornecedor" class="form-control form-control-sm"
+              value="{{ ann.get('fornecedor','') }}">
           </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold">Observações</label>
-            <textarea name="observacoes" class="form-control" rows="4"
-              placeholder="Anotações livres...">{{ ann.get('observacoes','') }}</textarea>
+            <textarea name="observacoes" class="form-control form-control-sm" rows="4">{{ ann.get('observacoes','') }}</textarea>
           </div>
-          <button type="submit" class="btn btn-primary w-100">
-            <i class="fa fa-save me-1"></i> Salvar
+          <button type="submit" class="btn btn-cisco w-100">
+            <i class="fa fa-save me-1"></i>Salvar
           </button>
         </form>
       </div>
@@ -95,34 +136,26 @@
   </div>
 </div>
 
-<!-- Corpo do email -->
 {% if quote.body %}
-<div class="card shadow-sm mt-4" style="border:none;border-radius:14px">
-  <div class="card-header bg-white fw-semibold" style="border-radius:14px 14px 0 0">
-    <i class="fa fa-envelope me-2 text-secondary"></i>Corpo do Email
-  </div>
+<div class="card shadow-sm mt-4 cisco-card">
+  <div class="card-header"><i class="fa fa-envelope me-2 text-muted"></i>Corpo do Email</div>
   <div class="card-body">
-    <pre class="mb-0" style="white-space:pre-wrap;font-family:inherit;font-size:.9rem">{{ quote.body }}</pre>
+    <pre class="mb-0" style="white-space:pre-wrap;font-family:inherit;font-size:.88rem;color:#444">{{ quote.body }}</pre>
   </div>
 </div>
 {% endif %}
 
-<!-- Produtos -->
 {% if quote.products %}
-<div class="card shadow-sm mt-4" style="border:none;border-radius:14px">
-  <div class="card-header bg-white fw-semibold" style="border-radius:14px 14px 0 0">
-    <i class="fa fa-boxes-stacked me-2 text-info"></i>Produtos ({{ quote.products|length }} itens)
-  </div>
+<div class="card shadow-sm mt-4 cisco-card">
+  <div class="card-header"><i class="fa fa-boxes-stacked me-2 text-cisco-bright"></i>Produtos ({{ quote.products|length }} itens)</div>
   <div class="table-responsive">
     <table class="table align-middle mb-0">
-      <thead class="table-light">
-        <tr><th>Qtd</th><th>Part Number</th><th>Descrição</th></tr>
-      </thead>
+      <thead class="table-light"><tr><th>Qtd</th><th>Part Number</th><th>Descrição</th></tr></thead>
       <tbody>
         {% for p in quote.products %}
         <tr>
-          <td class="fw-bold text-primary">{{ p.qty }}</td>
-          <td><code>{{ p.part_number }}</code></td>
+          <td class="fw-bold text-cisco-bright">{{ p.qty }}</td>
+          <td><code class="text-cisco">{{ p.part_number }}</code></td>
           <td class="text-muted small">{{ p.description if p.description != 'NA' else '—' }}</td>
         </tr>
         {% endfor %}
@@ -131,4 +164,20 @@
   </div>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleCorrection() {
+  const view = document.getElementById('view-extracted');
+  const form = document.getElementById('form-correction');
+  const btn  = document.getElementById('btn-edit-extracted');
+  const showing = form.style.display !== 'none';
+  form.style.display = showing ? 'none' : 'block';
+  view.style.display = showing ? 'block' : 'none';
+  btn.innerHTML = showing
+    ? '<i class="fa fa-pen me-1"></i>Corrigir'
+    : '<i class="fa fa-times me-1"></i>Cancelar';
+}
+</script>
 {% endblock %}

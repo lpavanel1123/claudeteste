@@ -8,8 +8,14 @@ from werkzeug.security import generate_password_hash, check_password_hash
 DATA_DIR        = Path("data")
 EXTRACTIONS_F   = Path("extractions.json")
 ANNOTATIONS_F   = DATA_DIR / "annotations.json"
+CORRECTIONS_F   = DATA_DIR / "corrections.json"
 AUDIT_LOG_F     = DATA_DIR / "audit_log.json"
 USERS_F         = DATA_DIR / "users.json"
+
+CORRECTABLE_FIELDS = [
+    "requester_name", "department", "request_type", "project_type",
+    "cnpj", "smart_account", "smart_account_domain", "virtual_account", "project_ref",
+]
 
 
 def _ensure() -> None:
@@ -61,16 +67,50 @@ def save_annotation(quote_id: str, subject: str, new_data: dict, user: str) -> N
         _append_audit(quote_id, subject, changes, user)
 
 
+# ── Corrections ──────────────────────────────────────────────────────────────
+
+def load_corrections() -> dict:
+    if not CORRECTIONS_F.exists():
+        return {}
+    return json.loads(CORRECTIONS_F.read_text(encoding="utf-8"))
+
+
+def save_correction(quote_id: str, subject: str, fields: dict, user: str) -> None:
+    """Save manually corrected auto-extracted fields, keeping full history per field."""
+    _ensure()
+    all_corr  = load_corrections()
+    entry     = all_corr.get(quote_id, {})
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    changes   = {}
+
+    for field, new_val in fields.items():
+        new_val = new_val.strip() if isinstance(new_val, str) else new_val
+        current = entry.get(field, {}).get("current", None)
+        if current == new_val:
+            continue
+        history = entry.get(field, {}).get("history", [])
+        history.append({"value": current, "at": timestamp, "by": user})
+        entry[field] = {"current": new_val, "history": history}
+        changes[field] = [current, new_val]
+
+    if not changes:
+        return
+
+    all_corr[quote_id] = entry
+    CORRECTIONS_F.write_text(json.dumps(all_corr, ensure_ascii=False, indent=2), encoding="utf-8")
+    _append_audit(quote_id, subject, changes, user, action="correction")
+
+
 # ── Audit log ─────────────────────────────────────────────────────────────────
 
-def _append_audit(quote_id: str, subject: str, changes: dict, user: str) -> None:
+def _append_audit(quote_id: str, subject: str, changes: dict, user: str, action: str = "edit") -> None:
     logs = load_audit_log()
     logs.insert(0, {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "user": user,
         "quote_id": quote_id,
         "subject": subject,
-        "action": "edit",
+        "action": action,
         "changes": changes,
     })
     AUDIT_LOG_F.write_text(json.dumps(logs, ensure_ascii=False, indent=2), encoding="utf-8")

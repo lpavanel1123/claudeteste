@@ -68,7 +68,10 @@
         <tr onclick="location.href='/quotes/{{ q.id }}'" style="cursor:pointer">
           <td class="text-nowrap small text-muted">{{ q.date[:10] }}</td>
           <td class="small">{{ q['from'] | truncate(30) }}</td>
-          <td><span class="fw-semibold small">{{ q.subject | truncate(45) }}</span></td>
+          <td>
+            <span class="fw-semibold small">{{ q.subject | truncate(40) }}</span>
+            {% if q.get('is_training') %}<span class="badge-training ms-1">Treinamento</span>{% endif %}
+          </td>
           <td>
             {% if q.request_type == 'Cotação' %}
               <span class="badge bg-primary">Cotação</span>

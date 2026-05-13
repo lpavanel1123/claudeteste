@@ -3,57 +3,78 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h5 class="page-title mb-0"><i class="fa-solid fa-chart-pie me-2 text-primary"></i>Dashboard</h5>
-  <small class="text-muted" id="last-update">Carregando...</small>
+  <div>
+    <h5 class="page-title mb-0">Dashboard</h5>
+    <small class="text-muted">Visão geral das cotações recebidas</small>
+  </div>
+  <small class="text-muted" id="last-update" style="font-size:.78rem">
+    <i class="fa fa-circle text-cisco-bright fa-xs me-1"></i>Carregando...
+  </small>
 </div>
 
 <!-- KPI Cards -->
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-3">
-    <div class="card kpi-card bg-primary text-white shadow">
-      <div class="card-body d-flex justify-content-between align-items-center py-3">
-        <div>
-          <div class="small opacity-75">Total de Entradas</div>
-          <div class="fs-2 fw-bold" id="kpi-total">{{ stats.total }}</div>
-          <div class="small opacity-75">{{ stats.cotacoes }} cotações · {{ stats.pedidos }} pedidos</div>
+    <div class="card kpi-card kpi-primary bg-white">
+      <div class="card-body py-3 px-3">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="text-muted small mb-1" style="font-size:.75rem">TOTAL DE ENTRADAS</div>
+            <div class="fs-2 fw-bold text-cisco" id="kpi-total">{{ stats.total }}</div>
+            <div class="small text-muted mt-1">{{ stats.cotacoes }} cot. · {{ stats.pedidos }} ped.</div>
+          </div>
+          <div class="rounded-2 p-2" style="background:rgba(0,80,115,.08)">
+            <i class="fa-solid fa-envelope-open-text text-cisco kpi-icon"></i>
+          </div>
         </div>
-        <i class="fa-solid fa-envelope-open-text kpi-icon"></i>
       </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card kpi-card bg-success text-white shadow">
-      <div class="card-body d-flex justify-content-between align-items-center py-3">
-        <div>
-          <div class="small opacity-75">Valor Total</div>
-          <div class="fs-5 fw-bold" id="kpi-valor">{{ "R$ {:,.2f}".format(stats.valor_total) }}</div>
-          <div class="small opacity-75">com valor cadastrado</div>
+    <div class="card kpi-card kpi-success bg-white">
+      <div class="card-body py-3 px-3">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="text-muted small mb-1" style="font-size:.75rem">VALOR TOTAL (R$)</div>
+            <div class="fw-bold text-cisco" style="font-size:1.25rem" id="kpi-valor">{{ "R$ {:,.0f}".format(stats.valor_total) }}</div>
+            <div class="small text-muted mt-1">com valor cadastrado</div>
+          </div>
+          <div class="rounded-2 p-2" style="background:rgba(108,192,74,.1)">
+            <i class="fa-solid fa-sack-dollar kpi-icon" style="color:#6cc04a"></i>
+          </div>
         </div>
-        <i class="fa-solid fa-brazilian-real-sign kpi-icon"></i>
       </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card kpi-card bg-warning text-dark shadow">
-      <div class="card-body d-flex justify-content-between align-items-center py-3">
-        <div>
-          <div class="small opacity-75">Em Aberto/Análise</div>
-          <div class="fs-2 fw-bold" id="kpi-abertas">{{ stats.abertas }}</div>
-          <div class="small opacity-75">aguardando ação</div>
+    <div class="card kpi-card kpi-warning bg-white">
+      <div class="card-body py-3 px-3">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="text-muted small mb-1" style="font-size:.75rem">EM ABERTO/ANÁLISE</div>
+            <div class="fs-2 fw-bold" style="color:#cc9900" id="kpi-abertas">{{ stats.abertas }}</div>
+            <div class="small text-muted mt-1">aguardando ação</div>
+          </div>
+          <div class="rounded-2 p-2" style="background:rgba(255,190,0,.1)">
+            <i class="fa-solid fa-clock kpi-icon" style="color:#ffbe00"></i>
+          </div>
         </div>
-        <i class="fa-solid fa-clock kpi-icon"></i>
       </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card kpi-card bg-secondary text-white shadow">
-      <div class="card-body d-flex justify-content-between align-items-center py-3">
-        <div>
-          <div class="small opacity-75">Fechadas</div>
-          <div class="fs-2 fw-bold" id="kpi-fechadas">{{ stats.fechadas }}</div>
-          <div class="small opacity-75">concluídas</div>
+    <div class="card kpi-card kpi-secondary bg-white">
+      <div class="card-body py-3 px-3">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="text-muted small mb-1" style="font-size:.75rem">FECHADAS</div>
+            <div class="fs-2 fw-bold text-muted" id="kpi-fechadas">{{ stats.fechadas }}</div>
+            <div class="small text-muted mt-1">concluídas</div>
+          </div>
+          <div class="rounded-2 p-2" style="background:rgba(107,119,140,.1)">
+            <i class="fa-solid fa-circle-check kpi-icon text-muted"></i>
+          </div>
         </div>
-        <i class="fa-solid fa-circle-check kpi-icon"></i>
       </div>
     </div>
   </div>
@@ -64,25 +85,25 @@
   <div class="col-md-6">
     <div class="card chart-card shadow-sm">
       <div class="card-header">Tipo de Solicitação</div>
-      <div class="card-body" style="height:260px"><canvas id="chartTipo"></canvas></div>
+      <div class="card-body" style="height:250px"><canvas id="chartTipo"></canvas></div>
     </div>
   </div>
   <div class="col-md-6">
     <div class="card chart-card shadow-sm">
       <div class="card-header">Status das Cotações</div>
-      <div class="card-body" style="height:260px"><canvas id="chartStatus"></canvas></div>
+      <div class="card-body" style="height:250px"><canvas id="chartStatus"></canvas></div>
     </div>
   </div>
   <div class="col-md-6">
     <div class="card chart-card shadow-sm">
       <div class="card-header">Top Departamentos</div>
-      <div class="card-body" style="height:260px"><canvas id="chartDeptos"></canvas></div>
+      <div class="card-body" style="height:250px"><canvas id="chartDeptos"></canvas></div>
     </div>
   </div>
   <div class="col-md-6">
     <div class="card chart-card shadow-sm">
       <div class="card-header">Volume por Semana (últimas 8)</div>
-      <div class="card-body" style="height:260px"><canvas id="chartSemanas"></canvas></div>
+      <div class="card-body" style="height:250px"><canvas id="chartSemanas"></canvas></div>
     </div>
   </div>
 </div>
@@ -90,60 +111,68 @@
 
 {% block scripts %}
 <script>
-const PALETTE = ['#0d6efd','#198754','#ffc107','#dc3545','#6f42c1','#0dcaf0','#fd7e14','#6c757d'];
-const charts  = {};
+const CISCO  = ['#005073','#049FD9','#00BCEB','#6cc04a','#ffbe00','#e2231a','#7B61FF','#FF6B35'];
+const charts = {};
 
 function fmtBRL(v) {
-  return 'R$ ' + Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  return 'R$ ' + Number(v).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0});
 }
 
 function buildAll(s) {
-  const base = { responsive:true, maintainAspectRatio:false };
+  const opts = { responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ labels:{ font:{size:11}, boxWidth:12 } } } };
 
-  ['tipo','status'].forEach(k => { if (charts[k]) charts[k].destroy(); });
+  ['tipo','status'].forEach(k => { if(charts[k]) charts[k].destroy(); });
+
   charts.tipo = new Chart(document.getElementById('chartTipo'), {
     type:'doughnut',
-    data:{ labels:s.chart_tipos.labels, datasets:[{ data:s.chart_tipos.data, backgroundColor:PALETTE }] },
-    options:{ ...base, plugins:{ legend:{ position:'bottom' } } }
+    data:{ labels:s.chart_tipos.labels, datasets:[{ data:s.chart_tipos.data, backgroundColor:CISCO, borderWidth:2 }] },
+    options:{ ...opts, plugins:{ legend:{ position:'right', labels:{font:{size:11},boxWidth:12} } }, cutout:'65%' }
   });
   charts.status = new Chart(document.getElementById('chartStatus'), {
     type:'doughnut',
-    data:{ labels:s.chart_status.labels, datasets:[{ data:s.chart_status.data, backgroundColor:PALETTE }] },
-    options:{ ...base, plugins:{ legend:{ position:'bottom' } } }
+    data:{ labels:s.chart_status.labels, datasets:[{ data:s.chart_status.data, backgroundColor:CISCO, borderWidth:2 }] },
+    options:{ ...opts, plugins:{ legend:{ position:'right', labels:{font:{size:11},boxWidth:12} } }, cutout:'65%' }
   });
 
-  if (charts.deptos) charts.deptos.destroy();
+  if(charts.deptos) charts.deptos.destroy();
   charts.deptos = new Chart(document.getElementById('chartDeptos'), {
     type:'bar',
-    data:{ labels:s.chart_deptos.labels, datasets:[{ label:'Qtd', data:s.chart_deptos.data, backgroundColor:'#0d6efd', borderRadius:6 }] },
-    options:{ ...base, plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ stepSize:1 } } } }
+    data:{ labels:s.chart_deptos.labels, datasets:[{ label:'Qtd', data:s.chart_deptos.data,
+      backgroundColor:'rgba(4,159,217,.8)', borderRadius:4, borderSkipped:false }] },
+    options:{ ...opts,
+      plugins:{ legend:{display:false} },
+      scales:{ y:{ beginAtZero:true, ticks:{stepSize:1,font:{size:11}}, grid:{color:'#eee'} },
+               x:{ ticks:{font:{size:10}} } } }
   });
 
-  if (charts.semanas) charts.semanas.destroy();
+  if(charts.semanas) charts.semanas.destroy();
   charts.semanas = new Chart(document.getElementById('chartSemanas'), {
     type:'line',
-    data:{ labels:s.chart_semanas.labels, datasets:[{ label:'Cotações', data:s.chart_semanas.data, borderColor:'#0d6efd', backgroundColor:'rgba(13,110,253,.1)', fill:true, tension:.4, pointRadius:4 }] },
-    options:{ ...base, plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ stepSize:1 } } } }
+    data:{ labels:s.chart_semanas.labels, datasets:[{ label:'Cotações', data:s.chart_semanas.data,
+      borderColor:'#005073', backgroundColor:'rgba(0,80,115,.08)',
+      fill:true, tension:.4, pointRadius:4, pointBackgroundColor:'#049FD9' }] },
+    options:{ ...opts,
+      plugins:{ legend:{display:false} },
+      scales:{ y:{ beginAtZero:true, ticks:{stepSize:1,font:{size:11}}, grid:{color:'#eee'} },
+               x:{ ticks:{font:{size:10}} } } }
   });
 }
 
 function updateKPIs(s) {
-  document.getElementById('kpi-total').textContent   = s.total;
-  document.getElementById('kpi-valor').textContent   = fmtBRL(s.valor_total);
-  document.getElementById('kpi-abertas').textContent = s.abertas;
-  document.getElementById('kpi-fechadas').textContent= s.fechadas;
-  document.getElementById('last-update').textContent = 'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
+  document.getElementById('kpi-total').textContent    = s.total;
+  document.getElementById('kpi-valor').textContent    = fmtBRL(s.valor_total);
+  document.getElementById('kpi-abertas').textContent  = s.abertas;
+  document.getElementById('kpi-fechadas').textContent = s.fechadas;
+  document.getElementById('last-update').innerHTML =
+    '<i class="fa fa-circle text-cisco-bright fa-xs me-1"></i>Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
 }
 
-const initStats = {{ stats | tojson }};
-buildAll(initStats);
-updateKPIs(initStats);
+const init = {{ stats | tojson }};
+buildAll(init); updateKPIs(init);
 
 setInterval(async () => {
-  try {
-    const s = await (await fetch('/api/stats')).json();
-    updateKPIs(s); buildAll(s);
-  } catch(_) {}
+  try { const s = await (await fetch('/api/stats')).json(); updateKPIs(s); buildAll(s); } catch(_) {}
 }, 5000);
 </script>
 {% endblock %}
