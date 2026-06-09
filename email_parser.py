@@ -22,32 +22,37 @@ def _sanitize(value: str) -> str:
 
 
 def parse_webhook(form: dict, files: dict) -> dict:
-    subject = _sanitize(form.get("subject", "(sem assunto)"))
-    sender = _sanitize(form.get("from", "desconhecido"))
-    recipient = _sanitize(form.get("To") or form.get("to", ""))
+    subject = _sanitize(form.get("headers[subject]", "(sem assunto)"))
+    sender = _sanitize(form.get("headers[from]") or form.get("envelope[from]", "desconhecido"))
+    recipient = _sanitize(form.get("headers[to]") or form.get("envelope[to]", ""))
 
-    date_raw = form.get("Date") or form.get("date", "")
+    date_raw = form.get("headers[date]", "")
     try:
         date = email.utils.parsedate_to_datetime(date_raw).strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
-        timestamp = form.get("timestamp")
-        if timestamp:
-            date = datetime.fromtimestamp(int(timestamp)).strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    body = form.get("body-plain", "").strip()
-    if not body:
-        body_html = form.get("body-html", "")
-        if body_html:
-            body = _html_to_text(body_html)
+    body_plain = form.get("plain", "").strip()
+    body_html = form.get("html", "")
 
-    attachment_count = min(int(form.get("attachment-count", 0)), _MAX_ATTACHMENTS)
+    body = body_plain
+    if not body and body_html:
+        body = _html_to_text(body_html)
+
     attachments = []
-    for i in range(1, attachment_count + 1):
-        file = files.get(f"attachment-{i}")
+    for file in files.getlist("attachments[]")[:_MAX_ATTACHMENTS]:
         if file and file.filename:
             attachments.append(_sanitize(file.filename))
+
+    raw_email = {
+        "from": sender,
+        "to": recipient,
+        "subject": subject,
+        "date": date,
+        "body_plain": body_plain,
+        "body_html": body_html,
+        "attachments": attachments,
+    }
 
     return {
         "subject": subject,
@@ -56,6 +61,7 @@ def parse_webhook(form: dict, files: dict) -> dict:
         "date": date,
         "body": body,
         "attachments": attachments,
+        "raw_email": raw_email,
     }
 
 

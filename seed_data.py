@@ -176,7 +176,7 @@ def seed_annotations(quotes: list) -> dict:
                 "status":              status,
                 "valor_total":         valor,
                 "responsavel_interno": random.choice(["João Silva", "Marina Faria", "Pedro Cunha", "Aline Torres", ""]),
-                "fornecedor":          random.choice(["Cisco Brasil", "Westcon", "Ingram Micro", "TD SYNNEX", ""]),
+                "fornecedor":          random.choice(["Cisco Brasil", "Westcon", "Ingram Micro", "TD SYNNEX", "Logicalis", "NTT", ""]),
                 "observacoes":         "",
                 "updated_at":          q["date"],
                 "updated_by":          "seed",

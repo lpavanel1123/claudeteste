@@ -202,7 +202,7 @@ def create_user(username: str, password: str, role: str = "admin") -> None:
     users = load_users()
     users.append({
         "username": username,
-        "password_hash": generate_password_hash(password),
+        "password_hash": generate_password_hash(password, method="pbkdf2:sha256"),
         "role": role,
     })
     USERS_F.write_text(json.dumps(users, ensure_ascii=False, indent=2), encoding="utf-8")

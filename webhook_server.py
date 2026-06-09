@@ -32,8 +32,8 @@ def webhook():
         print("  [rejeitado] token inválido")
         abort(403)
 
-    sender = request.form.get("from", "?")
-    recipient = request.form.get("To") or request.form.get("to", "?")
+    sender = request.form.get("headers[from]") or request.form.get("envelope[from]", "?")
+    recipient = request.form.get("headers[to]") or request.form.get("envelope[to]", "?")
     print(f"\n[email recebido] de {sender!r} para {recipient!r}")
 
     try:

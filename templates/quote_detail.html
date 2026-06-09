@@ -136,7 +136,66 @@
   </div>
 </div>
 
-{% if quote.body %}
+{% set raw = quote.get('raw_email', {}) %}
+{% if raw %}
+<div class="card shadow-sm mt-4 cisco-card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="fa fa-envelope-open-text me-2 text-muted"></i>Email na Íntegra</span>
+    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#raw-email-body">
+      <i class="fa fa-chevron-down"></i>
+    </button>
+  </div>
+  <div class="collapse show" id="raw-email-body">
+    <div class="card-body border-bottom pb-3">
+      <div class="row g-2 small">
+        <div class="col-12 col-sm-6">
+          <span class="text-muted fw-semibold">De:</span>
+          <span class="ms-1">{{ raw.get('from', '—') }}</span>
+        </div>
+        <div class="col-12 col-sm-6">
+          <span class="text-muted fw-semibold">Para:</span>
+          <span class="ms-1">{{ raw.get('to', '—') }}</span>
+        </div>
+        <div class="col-12 col-sm-6">
+          <span class="text-muted fw-semibold">Assunto:</span>
+          <span class="ms-1">{{ raw.get('subject', '—') }}</span>
+        </div>
+        <div class="col-12 col-sm-6">
+          <span class="text-muted fw-semibold">Data:</span>
+          <span class="ms-1">{{ raw.get('date', '—') }}</span>
+        </div>
+        {% if raw.get('attachments') %}
+        <div class="col-12">
+          <span class="text-muted fw-semibold">Anexos:</span>
+          <span class="ms-1">{{ raw.attachments | join(', ') }}</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if raw.get('body_plain') %}
+    <div class="card-body border-bottom">
+      <div class="small text-muted fw-semibold mb-2"><i class="fa fa-align-left me-1"></i>Texto Simples</div>
+      <pre style="white-space:pre-wrap;font-family:inherit;font-size:.85rem;color:#444;max-height:400px;overflow-y:auto;margin:0">{{ raw.body_plain }}</pre>
+    </div>
+    {% endif %}
+
+    {% if raw.get('body_html') %}
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="small text-muted fw-semibold"><i class="fa fa-code me-1"></i>HTML</span>
+        <button class="btn btn-xs btn-outline-secondary btn-sm py-0 px-2" type="button" data-bs-toggle="collapse" data-bs-target="#raw-html-content">
+          Expandir
+        </button>
+      </div>
+      <div class="collapse" id="raw-html-content">
+        <iframe srcdoc="{{ raw.body_html | e }}" style="width:100%;height:500px;border:1px solid #dee2e6;border-radius:4px;" sandbox="allow-same-origin"></iframe>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% elif quote.body %}
 <div class="card shadow-sm mt-4 cisco-card">
   <div class="card-header"><i class="fa fa-envelope me-2 text-muted"></i>Corpo do Email</div>
   <div class="card-body">
