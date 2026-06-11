@@ -136,9 +136,103 @@
   </div>
 </div>
 
+<div class="row g-4 mt-4">
+
+<!-- Timeline -->
+<div class="col-lg-5">
+<div class="card shadow-sm cisco-card h-100">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="fa fa-route me-2" style="color:var(--cisco-bright)"></i>Timeline do Processo</span>
+    <button class="btn btn-sm btn-outline-secondary" id="btn-tl" onclick="toggleTimeline()">
+      <i class="fa fa-pen me-1"></i>Editar Datas
+    </button>
+  </div>
+
+  <!-- View -->
+  <div class="card-body" id="view-tl">
+    <div class="timeline">
+      {% set ns = namespace(active_found=false) %}
+      {% set tl_dates = timeline.get('dates', {}) %}
+      {% for step in timeline_steps %}
+        {% set date_val = tl_dates.get(step.key, '') %}
+        {% if date_val %}
+          {% set step_state = 'done' %}
+        {% elif not ns.active_found %}
+          {% set step_state = 'active' %}
+          {% set ns.active_found = true %}
+        {% else %}
+          {% set step_state = 'pending' %}
+        {% endif %}
+        <div class="timeline-step {{ step_state }}">
+          <div class="timeline-marker">
+            <div class="timeline-dot">
+              {% if step_state == 'done' %}<i class="fa fa-check"></i>
+              {% else %}<i class="fa {{ step.icon }}"></i>{% endif %}
+            </div>
+            {% if not loop.last %}<div class="timeline-connector"></div>{% endif %}
+          </div>
+          <div class="timeline-content">
+            <div class="timeline-step-label">{{ step.label }}</div>
+            {% if date_val %}
+              <div class="timeline-date">{{ date_val | date_br }}</div>
+            {% else %}
+              <div class="timeline-date pending">Pendente</div>
+            {% endif %}
+            {% if step.get('extra_key') %}
+              {% set forecast_val = tl_dates.get(step.extra_key, '') %}
+              <div class="timeline-forecast">
+                <i class="fa fa-clock me-1"></i>{{ step.extra_label }}:
+                {% if forecast_val %}<strong>{{ forecast_val | date_br }}</strong>
+                {% else %}<span class="text-muted fst-italic">não definida</span>{% endif %}
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+    {% if timeline.get('updated_at') %}
+    <div class="text-muted small mt-3 pt-2 border-top">
+      <i class="fa fa-clock me-1"></i>Atualizado em {{ timeline.updated_at }} por {{ timeline.updated_by }}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Edit -->
+  <div class="card-body border-top" id="form-tl" style="display:none">
+    <form method="POST" action="/quotes/{{ quote.id }}/timeline">
+      <div class="row g-3">
+        {% set tl_dates = timeline.get('dates', {}) %}
+        {% for step in timeline_steps %}
+        <div class="col-12 col-sm-6">
+          <label class="form-label small fw-semibold mb-1">
+            <i class="fa {{ step.icon }} me-1 text-muted"></i>{{ step.label }}
+          </label>
+          <input type="date" name="{{ step.key }}" class="form-control form-control-sm"
+                 value="{{ tl_dates.get(step.key, '') }}">
+          {% if step.get('extra_key') %}
+          <label class="form-label small text-muted mt-2 mb-1">
+            <i class="fa fa-clock me-1"></i>{{ step.extra_label }}
+          </label>
+          <input type="date" name="{{ step.extra_key }}" class="form-control form-control-sm"
+                 value="{{ tl_dates.get(step.extra_key, '') }}">
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="d-flex gap-2 mt-3">
+        <button type="submit" class="btn btn-cisco btn-sm"><i class="fa fa-save me-1"></i>Salvar Timeline</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleTimeline()">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+</div><!-- /col timeline -->
+
+<!-- Email na Íntegra -->
+<div class="col-lg-7">
 {% set raw = quote.get('raw_email', {}) %}
 {% if raw %}
-<div class="card shadow-sm mt-4 cisco-card">
+<div class="card shadow-sm cisco-card h-100">
   <div class="card-header d-flex justify-content-between align-items-center">
     <span><i class="fa fa-envelope-open-text me-2 text-muted"></i>Email na Íntegra</span>
     <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#raw-email-body">
@@ -196,13 +290,16 @@
   </div>
 </div>
 {% elif quote.body %}
-<div class="card shadow-sm mt-4 cisco-card">
+<div class="card shadow-sm cisco-card h-100">
   <div class="card-header"><i class="fa fa-envelope me-2 text-muted"></i>Corpo do Email</div>
   <div class="card-body">
     <pre class="mb-0" style="white-space:pre-wrap;font-family:inherit;font-size:.88rem;color:#444">{{ quote.body }}</pre>
   </div>
 </div>
 {% endif %}
+</div><!-- /col email -->
+
+</div><!-- /row timeline+email -->
 
 {% if quote.products %}
 <div class="card shadow-sm mt-4 cisco-card">
@@ -227,6 +324,18 @@
 
 {% block scripts %}
 <script>
+function toggleTimeline() {
+  const view = document.getElementById('view-tl');
+  const form = document.getElementById('form-tl');
+  const btn  = document.getElementById('btn-tl');
+  const editing = form.style.display !== 'none';
+  form.style.display = editing ? 'none' : 'block';
+  view.style.display = editing ? 'block' : 'none';
+  btn.innerHTML = editing
+    ? '<i class="fa fa-pen me-1"></i>Editar Datas'
+    : '<i class="fa fa-times me-1"></i>Cancelar';
+}
+
 function toggleCorrection() {
   const view = document.getElementById('view-extracted');
   const form = document.getElementById('form-correction');

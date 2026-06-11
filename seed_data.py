@@ -166,6 +166,58 @@ def generate(n: int = 28) -> list:
     return quotes
 
 
+def _add_days(date_str: str, days: int) -> str:
+    d = datetime.strptime(date_str[:10], "%Y-%m-%d") + timedelta(days=days)
+    return d.strftime("%Y-%m-%d")
+
+
+def seed_timelines(quotes: list) -> dict:
+    timelines = {}
+    for q in quotes:
+        rtype = q["request_type"]
+        base  = q["date"][:10]
+
+        if rtype == "Cotação":
+            steps = ["solicitacao_orcamento", "entrega_orcamento"]
+            gaps  = [0, random.randint(2, 6)]
+        else:
+            gaps = [
+                0,
+                random.randint(3, 7),
+                random.randint(2, 5),
+                random.randint(1, 3),
+                random.randint(10, 21),
+                random.randint(30, 90),
+                random.randint(2, 14),
+                random.randint(2, 7),
+            ]
+            steps = [
+                "solicitacao_pedido", "entrega_orcamento", "aceite_area",
+                "pedido_cisco", "inicio_fabricacao", "previsao_fabricacao",
+                "entrega_parceiro", "entrega_demandante",
+            ]
+
+        # Quantas etapas preencher (pelo menos a primeira; cotação pode ter ambas)
+        if rtype == "Cotação":
+            n_filled = random.choices([1, 2], weights=[0.35, 0.65])[0]
+        else:
+            n_filled = random.choices(range(1, len(steps) + 1),
+                                      weights=[0.05, 0.10, 0.12, 0.14, 0.16, 0.15, 0.14, 0.14])[0]
+
+        dates = {}
+        cumulative = 0
+        for idx, step in enumerate(steps[:n_filled]):
+            cumulative += gaps[idx]
+            dates[step] = _add_days(base, cumulative)
+
+        timelines[q["id"]] = {
+            "dates":      dates,
+            "updated_at": q["date"],
+            "updated_by": "seed",
+        }
+    return timelines
+
+
 def seed_annotations(quotes: list) -> dict:
     annotations = {}
     for q in quotes:
@@ -198,6 +250,12 @@ def main():
     existing_ann.update(seed_annotations(quotes))
     ann_path.write_text(json.dumps(existing_ann, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[seed] annotations atualizadas")
+
+    tl_path = Path("data/timelines.json")
+    existing_tl = json.loads(tl_path.read_text(encoding="utf-8")) if tl_path.exists() else {}
+    existing_tl.update(seed_timelines(quotes))
+    tl_path.write_text(json.dumps(existing_tl, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[seed] timelines geradas")
 
 
 if __name__ == "__main__":

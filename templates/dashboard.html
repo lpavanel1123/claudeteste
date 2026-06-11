@@ -107,6 +107,49 @@
     </div>
   </div>
 </div>
+
+<!-- Operacional -->
+<div class="d-flex align-items-center mt-5 mb-3">
+  <div class="cisco-logo-bar me-2"></div>
+  <h6 class="mb-0 fw-bold text-cisco">Operacional</h6>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card chart-card shadow-sm">
+      <div class="card-header">Cotações e Pedidos por Fornecedor</div>
+      <div class="card-body" style="height:280px"><canvas id="chartFornecedor"></canvas></div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card chart-card shadow-sm">
+      <div class="card-header">Volume por Etapa do Processo</div>
+      <div class="card-body" style="height:280px"><canvas id="chartEtapas"></canvas></div>
+    </div>
+  </div>
+  <div class="col-12">
+    <div class="card shadow-sm cisco-card">
+      <div class="card-header">
+        <i class="fa fa-clock me-2" style="color:var(--cisco-warn)"></i>Top 10 Mais Antigos em Aberto
+      </div>
+      <div class="table-responsive">
+        <table class="table align-middle mb-0 small" id="tbl-top10">
+          <thead class="table-light">
+            <tr>
+              <th>Assunto</th>
+              <th>Tipo</th>
+              <th>Data</th>
+              <th>Idade</th>
+              <th>Etapa Atual</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="top10-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -157,6 +200,47 @@ function buildAll(s) {
       scales:{ y:{ beginAtZero:true, ticks:{stepSize:1,font:{size:11}}, grid:{color:'#eee'} },
                x:{ ticks:{font:{size:10}} } } }
   });
+
+  // Fornecedor
+  if(charts.fornecedor) charts.fornecedor.destroy();
+  charts.fornecedor = new Chart(document.getElementById('chartFornecedor'), {
+    type:'bar',
+    data:{ labels:s.chart_fornecedor.labels, datasets:[
+      { label:'Cotações', data:s.chart_fornecedor.cotacoes, backgroundColor:'rgba(0,80,115,.8)',   borderRadius:3, borderSkipped:false },
+      { label:'Pedidos',  data:s.chart_fornecedor.pedidos,  backgroundColor:'rgba(4,159,217,.8)', borderRadius:3, borderSkipped:false },
+    ]},
+    options:{ ...opts,
+      plugins:{ legend:{ labels:{font:{size:11},boxWidth:12} } },
+      scales:{ y:{ beginAtZero:true, ticks:{stepSize:1,font:{size:11}}, grid:{color:'#eee'} },
+               x:{ ticks:{font:{size:10}} } } }
+  });
+
+  // Por etapa
+  if(charts.etapas) charts.etapas.destroy();
+  charts.etapas = new Chart(document.getElementById('chartEtapas'), {
+    type:'bar',
+    data:{ labels:s.chart_etapas.labels, datasets:[{ label:'Qtd', data:s.chart_etapas.data,
+      backgroundColor: s.chart_etapas.labels.map((_,i) => CISCO[i % CISCO.length]),
+      borderRadius:4, borderSkipped:false }] },
+    options:{ ...opts,
+      plugins:{ legend:{display:false} },
+      indexAxis:'y',
+      scales:{ x:{ beginAtZero:true, ticks:{stepSize:1,font:{size:11}}, grid:{color:'#eee'} },
+               y:{ ticks:{font:{size:10}} } } }
+  });
+
+  // Top 10
+  const STATUS_COLOR = {'Em Aberto':'#ffbe00','Em Análise':'#049FD9','Aprovada':'#6cc04a','Ganha':'#005073','Perdida':'#e2231a','Rejeitada':'#aaa'};
+  const tbody = document.getElementById('top10-body');
+  if(tbody) tbody.innerHTML = (s.top10 || []).map(r => `
+    <tr style="cursor:pointer" onclick="location.href='/quotes/${r.id}'">
+      <td class="fw-semibold">${r.subject}</td>
+      <td><span class="badge" style="background:${r.type==='Pedido'?'rgba(0,80,115,.12)':'rgba(4,159,217,.12)'}; color:${r.type==='Pedido'?'#005073':'#049FD9'}">${r.type}</span></td>
+      <td class="text-muted">${r.date}</td>
+      <td><span class="fw-bold" style="color:${r.age>60?'#e2231a':r.age>30?'#ffbe00':'#6cc04a'}">${r.age}d</span></td>
+      <td class="text-muted small">${r.stage}</td>
+      <td><span class="badge" style="background:${STATUS_COLOR[r.status]||'#aaa'}22;color:${STATUS_COLOR[r.status]||'#aaa'}">${r.status}</span></td>
+    </tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted py-3">Nenhum item ativo</td></tr>';
 }
 
 function updateKPIs(s) {

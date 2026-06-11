@@ -9,6 +9,14 @@ app.secret_key = config.PORTAL_SECRET_KEY or "dev-only-change-me"
 STATUSES = ["Em Aberto", "Em Análise", "Aprovada", "Rejeitada", "Ganha", "Perdida"]
 
 
+@app.template_filter("date_br")
+def date_br(value):
+    parts = str(value).split("-")
+    if len(parts) == 3:
+        return f"{parts[2]}/{parts[1]}/{parts[0]}"
+    return value
+
+
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -99,10 +107,37 @@ def quote_detail(quote_id):
     quote = next((q for q in data_store.load_extractions() if q["id"] == quote_id), None)
     if not quote:
         return "Cotação não encontrada", 404
-    ann  = data_store.load_annotations().get(quote_id, {})
-    corr = data_store.load_corrections().get(quote_id, {})
+    ann      = data_store.load_annotations().get(quote_id, {})
+    corr     = data_store.load_corrections().get(quote_id, {})
+    timeline = data_store.load_timelines().get(quote_id, {"dates": {}})
+    request_type = corr.get("request_type", {}).get("current") or quote.get("request_type", "Cotação")
+    tl_steps = data_store.TIMELINE_STEPS.get(request_type, data_store.TIMELINE_STEPS["Cotação"])
     return render_template("quote_detail.html", quote=quote, ann=ann, corr=corr,
-                           statuses=STATUSES, correctable=data_store.CORRECTABLE_FIELDS)
+                           statuses=STATUSES, correctable=data_store.CORRECTABLE_FIELDS,
+                           timeline=timeline, timeline_steps=tl_steps)
+
+
+@app.route("/quotes/<quote_id>/timeline", methods=["POST"])
+@login_required
+def quote_timeline(quote_id):
+    quote = next((q for q in data_store.load_extractions() if q["id"] == quote_id), None)
+    if not quote:
+        return "Cotação não encontrada", 404
+    corr = data_store.load_corrections().get(quote_id, {})
+    request_type = corr.get("request_type", {}).get("current") or quote.get("request_type", "Cotação")
+    steps = data_store.TIMELINE_STEPS.get(request_type, data_store.TIMELINE_STEPS["Cotação"])
+    dates = {}
+    for step in steps:
+        val = request.form.get(step["key"], "").strip()
+        if val:
+            dates[step["key"]] = val
+        if "extra_key" in step:
+            extra_val = request.form.get(step["extra_key"], "").strip()
+            if extra_val:
+                dates[step["extra_key"]] = extra_val
+    data_store.save_timeline(quote_id, quote.get("subject", ""), dates, session["user"])
+    flash("Timeline atualizada com sucesso!", "success")
+    return redirect(url_for("quote_detail", quote_id=quote_id))
 
 
 @app.route("/quotes/<quote_id>/correct", methods=["POST"])

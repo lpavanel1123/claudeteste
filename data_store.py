@@ -17,6 +17,25 @@ CORRECTABLE_FIELDS = [
     "cnpj", "smart_account", "smart_account_domain", "virtual_account", "project_ref",
 ]
 
+TIMELINES_F = DATA_DIR / "timelines.json"
+
+TIMELINE_STEPS = {
+    "Cotação": [
+        {"key": "solicitacao_orcamento", "label": "Solicitação de Orçamento",    "icon": "fa-envelope"},
+        {"key": "entrega_orcamento",     "label": "Entrega do Orçamento",         "icon": "fa-file-invoice-dollar"},
+    ],
+    "Pedido": [
+        {"key": "solicitacao_pedido",  "label": "Solicitação do Pedido",          "icon": "fa-envelope"},
+        {"key": "entrega_orcamento",   "label": "Entrega do Orçamento",           "icon": "fa-file-invoice-dollar"},
+        {"key": "aceite_area",         "label": "Aceite da Área Demandante",      "icon": "fa-circle-check"},
+        {"key": "pedido_cisco",        "label": "Pedido na Cisco",                "icon": "fa-building"},
+        {"key": "inicio_fabricacao",   "label": "Início de Fabricação",           "icon": "fa-industry",
+         "extra_key": "previsao_fabricacao", "extra_label": "Previsão de Conclusão"},
+        {"key": "entrega_parceiro",    "label": "Entrega ao Parceiro",            "icon": "fa-truck"},
+        {"key": "entrega_demandante",  "label": "Entrega à Área Demandante",      "icon": "fa-flag-checkered"},
+    ],
+}
+
 
 def _ensure() -> None:
     DATA_DIR.mkdir(exist_ok=True)
@@ -168,6 +187,62 @@ def get_stats() -> dict:
     week_labels = [(now - timedelta(weeks=7 - i)).strftime("Sem %d/%m") for i in range(8)]
     week_data   = [weeks[i] for i in range(8)]
 
+    # ── Operacional ──────────────────────────────────────────────────────────
+
+    # Por fornecedor (cotações + pedidos agrupados)
+    forn_data: dict = defaultdict(lambda: {"Cotação": 0, "Pedido": 0})
+    for q in quotes:
+        ann  = annotations.get(q["id"], {})
+        forn = (ann.get("fornecedor") or "").strip()
+        if not forn:
+            continue
+        forn_data[forn][q.get("request_type", "Cotação")] += 1
+    sorted_forn = sorted(forn_data.items(), key=lambda x: -(x[1]["Cotação"] + x[1]["Pedido"]))[:10]
+
+    # Por etapa do processo
+    timelines = load_timelines()
+    etapas: dict = defaultdict(int)
+    for q in quotes:
+        rtype      = q.get("request_type", "Cotação")
+        steps_list = TIMELINE_STEPS.get(rtype, TIMELINE_STEPS["Cotação"])
+        tl_dates   = timelines.get(q["id"], {}).get("dates", {})
+        for step in steps_list:
+            if not tl_dates.get(step["key"]):
+                etapas[step["label"]] += 1
+                break
+        else:
+            etapas["Concluído"] += 1
+
+    # Top 10 mais antigos ativos
+    def _parse_date(d):
+        try:
+            return datetime.strptime(d, "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return datetime.min
+
+    active = [q for q in quotes if q["_status"] in {"Em Aberto", "Em Análise", "Aprovada"}]
+    oldest = sorted(active, key=lambda q: _parse_date(q.get("date", "")))[:10]
+    top10  = []
+    for q in oldest:
+        rtype      = q.get("request_type", "Cotação")
+        steps_list = TIMELINE_STEPS.get(rtype, TIMELINE_STEPS["Cotação"])
+        tl_dates   = timelines.get(q["id"], {}).get("dates", {})
+        stage      = "Concluído"
+        for step in steps_list:
+            if not tl_dates.get(step["key"]):
+                stage = step["label"]
+                break
+        age = (now - _parse_date(q.get("date", ""))).days
+        top10.append({
+            "id":      q["id"],
+            "subject": (q.get("subject") or "—")[:55],
+            "date":    q.get("date", "")[:10],
+            "age":     age,
+            "type":    rtype,
+            "stage":   stage,
+            "status":  q["_status"],
+        })
+
     return {
         "total":       total,
         "cotacoes":    cotacoes,
@@ -179,7 +254,37 @@ def get_stats() -> dict:
         "chart_status":  {"labels": list(statuses.keys()), "data": list(statuses.values())},
         "chart_deptos":  {"labels": [d[0][:25] for d in top_deptos], "data": [d[1] for d in top_deptos]},
         "chart_semanas": {"labels": week_labels, "data": week_data},
+        "chart_fornecedor": {
+            "labels":   [f[0] for f in sorted_forn],
+            "cotacoes": [f[1]["Cotação"] for f in sorted_forn],
+            "pedidos":  [f[1]["Pedido"]  for f in sorted_forn],
+        },
+        "chart_etapas": {"labels": list(etapas.keys()), "data": list(etapas.values())},
+        "top10": top10,
     }
+
+
+# ── Timelines ─────────────────────────────────────────────────────────────────
+
+def load_timelines() -> dict:
+    if not TIMELINES_F.exists():
+        return {}
+    return json.loads(TIMELINES_F.read_text(encoding="utf-8"))
+
+
+def save_timeline(quote_id: str, subject: str, dates: dict, user: str) -> None:
+    _ensure()
+    timelines = load_timelines()
+    old_dates = timelines.get(quote_id, {}).get("dates", {})
+    changes = {k: [old_dates.get(k), v] for k, v in dates.items() if old_dates.get(k) != v}
+    timelines[quote_id] = {
+        "dates": dates,
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "updated_by": user,
+    }
+    TIMELINES_F.write_text(json.dumps(timelines, ensure_ascii=False, indent=2), encoding="utf-8")
+    if changes:
+        _append_audit(quote_id, subject, changes, user, action="timeline")
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
