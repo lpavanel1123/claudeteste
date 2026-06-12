@@ -18,6 +18,17 @@ CORRECTABLE_FIELDS = [
 ]
 
 TIMELINES_F = DATA_DIR / "timelines.json"
+DEALS_F     = DATA_DIR / "deals.json"
+
+DEAL_FIELDS = [
+    {"key": "projeto_id_vale",       "label": "Projeto ID (Vale)"},
+    {"key": "logicalis_id",          "label": "Logicalis ID (ETC)"},
+    {"key": "ntt_id",                "label": "NTT ID"},
+    {"key": "estimate_nacional",     "label": "Estimate Nacional"},
+    {"key": "estimate_importado",    "label": "Estimate Importado"},
+    {"key": "order_id",              "label": "Order ID"},
+    {"key": "deal_id",               "label": "Deal ID"},
+]
 
 TIMELINE_STEPS = {
     "Cotação": [
@@ -262,6 +273,27 @@ def get_stats() -> dict:
         "chart_etapas": {"labels": list(etapas.keys()), "data": list(etapas.values())},
         "top10": top10,
     }
+
+
+# ── Deals ─────────────────────────────────────────────────────────────────────
+
+def load_deals() -> dict:
+    if not DEALS_F.exists():
+        return {}
+    return json.loads(DEALS_F.read_text(encoding="utf-8"))
+
+
+def save_deal(quote_id: str, subject: str, data: dict, user: str) -> None:
+    _ensure()
+    deals    = load_deals()
+    old_data = deals.get(quote_id, {})
+    changes  = {k: [old_data.get(k), v] for k, v in data.items() if old_data.get(k) != v and v}
+    data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    data["updated_by"] = user
+    deals[quote_id]    = data
+    DEALS_F.write_text(json.dumps(deals, ensure_ascii=False, indent=2), encoding="utf-8")
+    if changes:
+        _append_audit(quote_id, subject, changes, user, action="deal")
 
 
 # ── Timelines ─────────────────────────────────────────────────────────────────

@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}Nova Cotação — Portal{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-4">
+  <a href="/quotes" class="btn btn-sm btn-outline-secondary"><i class="fa fa-arrow-left"></i></a>
+  <h5 class="page-title mb-0">Nova Cotação Manual</h5>
+</div>
+
+<form method="POST" action="/quotes/new" id="form-nova">
+<div class="row g-4">
+
+  <!-- Coluna Esquerda -->
+  <div class="col-lg-8">
+
+    <!-- Identificação -->
+    <div class="card shadow-sm cisco-card mb-4">
+      <div class="card-header"><i class="fa fa-envelope me-2 text-muted"></i>Identificação</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Assunto <span class="text-danger">*</span></label>
+            <input type="text" name="subject" class="form-control form-control-sm" placeholder="Cotação de equipamentos Cisco..." required>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Classificação -->
+    <div class="card shadow-sm cisco-card mb-4">
+      <div class="card-header"><i class="fa fa-tags me-2" style="color:var(--cisco-bright)"></i>Classificação</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Tipo <span class="text-danger">*</span></label>
+            <div class="d-flex gap-3 mt-1">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="request_type" id="tipo-cot" value="Cotação" checked>
+                <label class="form-check-label small" for="tipo-cot">Cotação</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="request_type" id="tipo-ped" value="Pedido">
+                <label class="form-check-label small" for="tipo-ped">Pedido</label>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Tipo de Projeto</label>
+            <select name="project_type" class="form-select form-select-sm">
+              <option value="NA">— Não aplicável —</option>
+              <option value="Novo Projeto">Novo Projeto</option>
+              <option value="Obsolescência">Obsolescência</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Ref. Projeto</label>
+            <input type="text" name="project_ref" class="form-control form-control-sm" placeholder="PROJ-2026-001">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Solicitante -->
+    <div class="card shadow-sm cisco-card mb-4">
+      <div class="card-header"><i class="fa fa-user me-2" style="color:var(--cisco-teal)"></i>Solicitante</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Nome do Requisitante</label>
+            <input type="text" name="requester_name" class="form-control form-control-sm" placeholder="Nome Completo">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Departamento</label>
+            <input type="text" name="department" class="form-control form-control-sm" placeholder="TI - Infraestrutura">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">CNPJ</label>
+            <input type="text" name="cnpj" class="form-control form-control-sm" placeholder="00.000.000/0001-00">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cisco -->
+    <div class="card shadow-sm cisco-card mb-4">
+      <div class="card-header"><i class="fa fa-building me-2 text-cisco"></i>Dados Cisco</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">Smart Account</label>
+            <input type="text" name="smart_account" class="form-control form-control-sm" placeholder="BR (Brasil)">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">Smart Account Domain</label>
+            <input type="text" name="smart_account_domain" class="form-control form-control-sm" placeholder="empresa.com.br">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small fw-semibold">Virtual Account</label>
+            <input type="text" name="virtual_account" class="form-control form-control-sm" placeholder="BR-TI-SP">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Produtos -->
+    <div class="card shadow-sm cisco-card mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="fa fa-boxes-stacked me-2 text-cisco-bright"></i>Produtos</span>
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addProduto()">
+          <i class="fa fa-plus me-1"></i>Adicionar linha
+        </button>
+      </div>
+      <div class="table-responsive">
+        <table class="table align-middle mb-0" id="tbl-produtos">
+          <thead class="table-light">
+            <tr>
+              <th style="width:80px">Qtd</th>
+              <th style="width:180px">Part Number</th>
+              <th>Descrição</th>
+              <th style="width:40px"></th>
+            </tr>
+          </thead>
+          <tbody id="tbody-produtos">
+            <tr>
+              <td><input type="number" name="qty[]" class="form-control form-control-sm" value="1" min="1"></td>
+              <td><input type="text"   name="part_number[]" class="form-control form-control-sm" placeholder="C9300-48P-A"></td>
+              <td><input type="text"   name="description[]" class="form-control form-control-sm" placeholder="Descrição do produto"></td>
+              <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeProduto(this)"><i class="fa fa-trash"></i></button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Corpo do e-mail -->
+    <div class="card shadow-sm cisco-card mb-4">
+      <div class="card-header"><i class="fa fa-align-left me-2 text-muted"></i>Observações</div>
+      <div class="card-body">
+        <textarea name="body" class="form-control form-control-sm" rows="5" placeholder="Cole aqui o conteúdo do e-mail ou observações adicionais..."></textarea>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Coluna Direita — Administrativo -->
+  <div class="col-lg-4">
+    <div class="card shadow-sm cisco-card" style="position:sticky;top:72px">
+      <div class="card-header"><i class="fa fa-sliders me-2" style="color:var(--cisco-warn)"></i>Administrativo</div>
+      <div class="card-body">
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Status</label>
+          <select name="status" class="form-select form-select-sm">
+            {% for s in statuses %}
+            <option>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Valor Total (R$)</label>
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">R$</span>
+            <input type="text" name="valor_total" class="form-control" placeholder="0,00">
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Responsável Interno</label>
+          <input type="text" name="responsavel_interno" class="form-control form-control-sm" placeholder="Nome">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Fornecedor</label>
+          <select name="fornecedor" class="form-select form-select-sm">
+            <option value="">— Selecione —</option>
+            <option value="Logicalis">Logicalis</option>
+            <option value="NTT">NTT</option>
+            <option value="Outros">Outros</option>
+          </select>
+        </div>
+        <div class="mb-4">
+          <label class="form-label small fw-semibold">Observações</label>
+          <textarea name="observacoes" class="form-control form-control-sm" rows="3"></textarea>
+        </div>
+        <button type="submit" class="btn btn-cisco w-100">
+          <i class="fa fa-save me-1"></i>Salvar Cotação
+        </button>
+        <a href="/quotes" class="btn btn-outline-secondary w-100 mt-2">Cancelar</a>
+      </div>
+    </div>
+  </div>
+
+</div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function addProduto() {
+  const tbody = document.getElementById('tbody-produtos');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="number" name="qty[]" class="form-control form-control-sm" value="1" min="1"></td>
+    <td><input type="text"   name="part_number[]" class="form-control form-control-sm" placeholder="C9300-48P-A"></td>
+    <td><input type="text"   name="description[]" class="form-control form-control-sm" placeholder="Descrição do produto"></td>
+    <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeProduto(this)"><i class="fa fa-trash"></i></button></td>
+  `;
+  tbody.appendChild(tr);
+}
+
+function removeProduto(btn) {
+  const rows = document.querySelectorAll('#tbody-produtos tr');
+  if (rows.length > 1) btn.closest('tr').remove();
+}
+</script>
+{% endblock %}

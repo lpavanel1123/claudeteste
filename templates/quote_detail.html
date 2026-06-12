@@ -8,6 +8,9 @@
   {% if quote.get('is_training') %}
     <span class="badge bg-warning text-dark ms-1"><i class="fa fa-flask me-1"></i>Dados de Treinamento</span>
   {% endif %}
+  {% if quote.get('is_manual') %}
+    <span class="badge ms-1" style="background:rgba(0,188,235,.15);color:var(--cisco-teal);border:1px solid var(--cisco-teal)"><i class="fa fa-pen-to-square me-1"></i>Entrada Manual</span>
+  {% endif %}
 </div>
 
 <div class="row g-4">
@@ -120,8 +123,13 @@
           </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold">Fornecedor</label>
-            <input type="text" name="fornecedor" class="form-control form-control-sm"
-              value="{{ ann.get('fornecedor','') }}">
+            <select name="fornecedor" class="form-select form-select-sm">
+              {% set forn_atual = ann.get('fornecedor', '') %}
+              <option value="">— Selecione —</option>
+              <option value="Logicalis" {% if forn_atual == 'Logicalis' %}selected{% endif %}>Logicalis</option>
+              <option value="NTT"       {% if forn_atual == 'NTT' %}selected{% endif %}>NTT</option>
+              <option value="Outros"    {% if forn_atual not in ('Logicalis', 'NTT', '') %}selected{% endif %}>Outros</option>
+            </select>
           </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold">Observações</label>
@@ -133,6 +141,72 @@
         </form>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- IDs & Estimates -->
+<div class="card shadow-sm mt-4 cisco-card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="fa fa-fingerprint me-2" style="color:var(--cisco-teal)"></i>IDs & Estimates</span>
+    <div class="d-flex align-items-center gap-2">
+      {% if deal.get('updated_at') %}
+      <small class="text-muted fw-normal">{{ deal.updated_at }} por {{ deal.updated_by }}</small>
+      {% endif %}
+      <button class="btn btn-sm btn-outline-secondary" id="btn-deal" onclick="toggleDeal()">
+        <i class="fa fa-pen me-1"></i>Editar
+      </button>
+    </div>
+  </div>
+
+  <!-- View -->
+  <div class="card-body" id="view-deal">
+    {% set forn = ann.get('fornecedor', '') %}
+    <div class="row g-2 flex-nowrap overflow-auto pb-1">
+      {% for f in deal_fields %}
+        {% set blocked = (f.key == 'logicalis_id' and forn == 'NTT') or (f.key == 'ntt_id' and forn == 'Logicalis') %}
+        <div class="col" style="min-width:130px">
+          <div class="field-group h-100 {{ 'opacity-50' if blocked else '' }}">
+            <div class="field-label">{{ f.label }}</div>
+            <div class="field-value">
+              {% if blocked %}
+                <span class="text-muted fst-italic small">N/A</span>
+              {% else %}
+                {{ deal.get(f.key) or '—' }}
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Edit -->
+  <div class="card-body border-top" id="form-deal" style="display:none">
+    <form method="POST" action="/quotes/{{ quote.id }}/deal">
+      {% set forn = ann.get('fornecedor', '') %}
+      <div class="row g-2 flex-nowrap overflow-auto pb-1">
+        {% for f in deal_fields %}
+          {% set blocked = (f.key == 'logicalis_id' and forn == 'NTT') or (f.key == 'ntt_id' and forn == 'Logicalis') %}
+          <div class="col" style="min-width:130px">
+            <label class="form-label small fw-semibold mb-1 {{ 'text-muted' if blocked else '' }}">{{ f.label }}</label>
+            <input type="text" name="{{ f.key }}"
+                   class="form-control form-control-sm {{ 'bg-light text-muted' if blocked else '' }}"
+                   value="{{ '' if blocked else deal.get(f.key, '') }}"
+                   placeholder="{{ 'N/A' if blocked else '—' }}"
+                   {{ 'disabled' if blocked else '' }}>
+            {% if blocked %}
+            <div class="small text-muted mt-1" style="font-size:.7rem">
+              <i class="fa fa-lock me-1"></i>Fornecedor: {{ forn }}
+            </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="d-flex gap-2 mt-3">
+        <button type="submit" class="btn btn-cisco btn-sm"><i class="fa fa-save me-1"></i>Salvar</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleDeal()">Cancelar</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -291,7 +365,13 @@
 </div>
 {% elif quote.body %}
 <div class="card shadow-sm cisco-card h-100">
-  <div class="card-header"><i class="fa fa-envelope me-2 text-muted"></i>Corpo do Email</div>
+  <div class="card-header">
+    {% if quote.get('is_manual') %}
+      <i class="fa fa-align-left me-2 text-muted"></i>Observações
+    {% else %}
+      <i class="fa fa-envelope me-2 text-muted"></i>Corpo do Email
+    {% endif %}
+  </div>
   <div class="card-body">
     <pre class="mb-0" style="white-space:pre-wrap;font-family:inherit;font-size:.88rem;color:#444">{{ quote.body }}</pre>
   </div>
@@ -324,6 +404,18 @@
 
 {% block scripts %}
 <script>
+function toggleDeal() {
+  const view = document.getElementById('view-deal');
+  const form = document.getElementById('form-deal');
+  const btn  = document.getElementById('btn-deal');
+  const editing = form.style.display !== 'none';
+  form.style.display = editing ? 'none' : 'block';
+  view.style.display = editing ? 'block' : 'none';
+  btn.innerHTML = editing
+    ? '<i class="fa fa-pen me-1"></i>Editar'
+    : '<i class="fa fa-times me-1"></i>Cancelar';
+}
+
 function toggleTimeline() {
   const view = document.getElementById('view-tl');
   const form = document.getElementById('form-tl');

@@ -1,4 +1,7 @@
 from functools import wraps
+from datetime import datetime
+from pathlib import Path
+import json
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 import data_store
 import config
@@ -110,11 +113,86 @@ def quote_detail(quote_id):
     ann      = data_store.load_annotations().get(quote_id, {})
     corr     = data_store.load_corrections().get(quote_id, {})
     timeline = data_store.load_timelines().get(quote_id, {"dates": {}})
+    deal     = data_store.load_deals().get(quote_id, {})
     request_type = corr.get("request_type", {}).get("current") or quote.get("request_type", "Cotação")
     tl_steps = data_store.TIMELINE_STEPS.get(request_type, data_store.TIMELINE_STEPS["Cotação"])
     return render_template("quote_detail.html", quote=quote, ann=ann, corr=corr,
                            statuses=STATUSES, correctable=data_store.CORRECTABLE_FIELDS,
-                           timeline=timeline, timeline_steps=tl_steps)
+                           timeline=timeline, timeline_steps=tl_steps,
+                           deal=deal, deal_fields=data_store.DEAL_FIELDS)
+
+
+@app.route("/quotes/new", methods=["GET", "POST"])
+@login_required
+def quote_new():
+    if request.method == "POST":
+        import uuid
+        quote_id = str(uuid.uuid4())
+        now_str  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Produtos dinâmicos
+        products = []
+        for qty, part, desc in zip(
+            request.form.getlist("qty[]"),
+            request.form.getlist("part_number[]"),
+            request.form.getlist("description[]"),
+        ):
+            part = part.strip()
+            if part:
+                products.append({"qty": qty.strip() or "1", "part_number": part, "description": desc.strip()})
+
+        quote = {
+            "id":                   quote_id,
+            "is_manual":            True,
+            "date":                 now_str,
+            "from":                 session["user"],
+            "subject":              request.form.get("subject", "").strip() or "(sem assunto)",
+            "request_type":         request.form.get("request_type", "Cotação"),
+            "project_type":         request.form.get("project_type", "NA"),
+            "requester_name":       request.form.get("requester_name", "").strip(),
+            "department":           request.form.get("department", "").strip(),
+            "recipient":            config.EMAIL_ADDRESS,
+            "cnpj":                 request.form.get("cnpj", "").strip(),
+            "smart_account":        request.form.get("smart_account", "").strip(),
+            "smart_account_domain": request.form.get("smart_account_domain", "").strip(),
+            "virtual_account":      request.form.get("virtual_account", "").strip(),
+            "project_ref":          request.form.get("project_ref", "").strip() or "NA",
+            "products":             products,
+            "body":                 request.form.get("body", "").strip(),
+        }
+
+        path = Path("extractions.json")
+        entries = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+        entries.append(quote)
+        path.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        raw_valor = request.form.get("valor_total", "").replace(",", ".").replace("R$", "").strip()
+        ann_data  = {
+            "status":              request.form.get("status", "Em Aberto"),
+            "valor_total":         float(raw_valor) if raw_valor else None,
+            "responsavel_interno": request.form.get("responsavel_interno", "").strip(),
+            "fornecedor":          request.form.get("fornecedor", "").strip(),
+            "observacoes":         request.form.get("observacoes", "").strip(),
+        }
+        data_store.save_annotation(quote_id, quote["subject"], ann_data, session["user"])
+
+        flash("Cotação criada com sucesso!", "success")
+        return redirect(url_for("quote_detail", quote_id=quote_id))
+
+    return render_template("new_quote.html", statuses=STATUSES,
+                           now=datetime.now().strftime("%Y-%m-%dT%H:%M"))
+
+
+@app.route("/quotes/<quote_id>/deal", methods=["POST"])
+@login_required
+def quote_deal(quote_id):
+    quote = next((q for q in data_store.load_extractions() if q["id"] == quote_id), None)
+    if not quote:
+        return "Cotação não encontrada", 404
+    data = {f["key"]: request.form.get(f["key"], "").strip() for f in data_store.DEAL_FIELDS}
+    data_store.save_deal(quote_id, quote.get("subject", ""), data, session["user"])
+    flash("IDs e Estimates salvos com sucesso!", "success")
+    return redirect(url_for("quote_detail", quote_id=quote_id))
 
 
 @app.route("/quotes/<quote_id>/timeline", methods=["POST"])

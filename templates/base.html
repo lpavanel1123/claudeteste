@@ -34,8 +34,13 @@
         </a>
       </li>
       <li class="nav-item">
-        <a class="nav-link {% if '/quotes' in request.path %}active{% endif %}" href="/quotes">
+        <a class="nav-link {% if request.path == '/quotes' or (request.path.startswith('/quotes/') and request.path != '/quotes/new') %}active{% endif %}" href="/quotes">
           <i class="fa-solid fa-file-invoice fa-fw"></i> Cotações
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link {% if request.path == '/quotes/new' %}active{% endif %}" href="/quotes/new">
+          <i class="fa-solid fa-circle-plus fa-fw"></i> Nova Cotação
         </a>
       </li>
       <li class="nav-item">
