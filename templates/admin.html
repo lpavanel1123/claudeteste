@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Admin — Portal{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-4">
+  <h5 class="page-title mb-0"><i class="fa fa-shield-halved me-2 text-cisco"></i>Administração</h5>
+  <span class="badge bg-cisco text-white ms-1" style="font-size:.7rem">Admin</span>
+</div>
+
+<div class="row g-4">
+
+  <!-- Lista de usuários -->
+  <div class="col-lg-8">
+    <div class="card shadow-sm cisco-card">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="fa fa-users text-muted"></i>
+        <span class="fw-semibold">Usuários Cadastrados</span>
+        <span class="badge bg-secondary ms-auto">{{ users | length }}</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Nome</th>
+              <th>Username</th>
+              <th>E-mail</th>
+              <th>Celular</th>
+              <th>Empresa</th>
+              <th>Role</th>
+              <th>Criado em</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in users %}
+            <tr>
+              <td class="fw-semibold">{{ u.nome or '—' }}</td>
+              <td><code class="small">{{ u.username }}</code></td>
+              <td class="small text-muted">{{ u.email or '—' }}</td>
+              <td class="small text-muted">{{ u.celular or '—' }}</td>
+              <td class="small">{{ u.empresa or '—' }}</td>
+              <td>
+                {% if u.role == 'admin' %}
+                  <span class="badge" style="background:var(--cisco-bright);color:#fff">admin</span>
+                {% else %}
+                  <span class="badge bg-secondary">viewer</span>
+                {% endif %}
+              </td>
+              <td class="small text-muted">{{ u.created_at or '—' }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="7" class="text-center text-muted py-4 small">Nenhum usuário cadastrado.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Formulário novo usuário -->
+  <div class="col-lg-4">
+    <div class="card shadow-sm cisco-card" style="position:sticky;top:72px">
+      <div class="card-header">
+        <i class="fa fa-user-plus me-2" style="color:var(--cisco-teal)"></i>
+        <span class="fw-semibold">Novo Usuário</span>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="/admin/users" id="form-novo-usuario">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Nome Completo</label>
+            <input type="text" name="nome" class="form-control form-control-sm" placeholder="João da Silva">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">E-mail</label>
+            <input type="email" name="email" class="form-control form-control-sm" placeholder="joao@empresa.com.br">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Celular</label>
+            <input type="text" name="celular" class="form-control form-control-sm" placeholder="(11) 99999-9999">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Empresa</label>
+            <input type="text" name="empresa" class="form-control form-control-sm" placeholder="Vale S.A.">
+          </div>
+
+          <hr class="my-3">
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Username <span class="text-danger">*</span></label>
+            <input type="text" name="username" class="form-control form-control-sm"
+                   placeholder="joao.silva" required autocomplete="off">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Senha <span class="text-danger">*</span></label>
+            <input type="password" name="password" id="pwd" class="form-control form-control-sm"
+                   required autocomplete="new-password">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Confirmar Senha <span class="text-danger">*</span></label>
+            <input type="password" name="password_confirm" id="pwd2" class="form-control form-control-sm"
+                   required autocomplete="new-password">
+            <div id="pwd-mismatch" class="invalid-feedback">As senhas não coincidem.</div>
+          </div>
+          <div class="mb-4">
+            <label class="form-label small fw-semibold">Role</label>
+            <select name="role" class="form-select form-select-sm">
+              <option value="viewer">Viewer</option>
+              <option value="admin">Admin</option>
+            </select>
+            <div class="form-text small text-muted mt-1">
+              <i class="fa fa-info-circle me-1"></i>Admin tem acesso a esta tela.
+            </div>
+          </div>
+          <button type="submit" class="btn btn-cisco w-100" id="btn-criar">
+            <i class="fa fa-user-plus me-1"></i>Criar Usuário
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const pwd  = document.getElementById('pwd');
+  const pwd2 = document.getElementById('pwd2');
+  const btn  = document.getElementById('btn-criar');
+
+  function check() {
+    const mismatch = pwd.value && pwd2.value && pwd.value !== pwd2.value;
+    pwd2.classList.toggle('is-invalid', mismatch);
+    btn.disabled = mismatch;
+  }
+
+  pwd.addEventListener('input', check);
+  pwd2.addEventListener('input', check);
+
+  document.getElementById('form-novo-usuario').addEventListener('submit', function (e) {
+    if (pwd.value !== pwd2.value) {
+      e.preventDefault();
+      check();
+    }
+  });
+})();
+</script>
+{% endblock %}

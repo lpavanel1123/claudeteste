@@ -327,20 +327,37 @@ def load_users() -> list:
     return json.loads(USERS_F.read_text(encoding="utf-8"))
 
 
-def verify_user(username: str, password: str) -> bool:
+def verify_user(username: str, password: str):
+    """Returns user dict on success, None on failure."""
     for u in load_users():
         if u["username"] == username:
-            return check_password_hash(u["password_hash"], password)
-    return False
+            if check_password_hash(u["password_hash"], password):
+                return u
+    return None
 
 
-def create_user(username: str, password: str, role: str = "admin") -> None:
+def list_users_safe() -> list:
+    """Returns all users without password hashes."""
+    return [{k: v for k, v in u.items() if k != "password_hash"} for u in load_users()]
+
+
+def username_exists(username: str) -> bool:
+    return any(u["username"] == username for u in load_users())
+
+
+def create_user(username: str, password: str, role: str = "viewer",
+                nome: str = "", email: str = "", celular: str = "", empresa: str = "") -> None:
     _ensure()
     users = load_users()
     users.append({
-        "username": username,
+        "username":      username,
         "password_hash": generate_password_hash(password, method="pbkdf2:sha256"),
-        "role": role,
+        "role":          role,
+        "nome":          nome,
+        "email":         email,
+        "celular":       celular,
+        "empresa":       empresa,
+        "created_at":    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     })
     USERS_F.write_text(json.dumps(users, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -348,5 +365,5 @@ def create_user(username: str, password: str, role: str = "admin") -> None:
 def ensure_default_user() -> None:
     _ensure()
     if not load_users():
-        create_user("admin", "admin123")
+        create_user("admin", "admin123", role="admin")
         print("  [portal] Usuário padrão criado → admin / admin123  ⚠️  ALTERE A SENHA!")

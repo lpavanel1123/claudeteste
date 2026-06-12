@@ -29,6 +29,18 @@ def login_required(f):
     return decorated
 
 
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user" not in session:
+            return redirect(url_for("login"))
+        if session.get("role") != "admin":
+            flash("Acesso restrito a administradores.", "danger")
+            return redirect(url_for("dashboard"))
+        return f(*args, **kwargs)
+    return decorated
+
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 @app.route("/login", methods=["GET", "POST"])
@@ -38,8 +50,10 @@ def login():
     if request.method == "POST":
         u = request.form.get("username", "").strip()
         p = request.form.get("password", "")
-        if data_store.verify_user(u, p):
+        u_data = data_store.verify_user(u, p)
+        if u_data:
             session["user"] = u
+            session["role"] = u_data.get("role", "viewer")
             return redirect(url_for("dashboard"))
         flash("Usuário ou senha incorretos.", "danger")
     return render_template("login.html")
@@ -248,6 +262,42 @@ def quote_edit(quote_id):
     data_store.save_annotation(quote_id, quote.get("subject", ""), new_data, session["user"])
     flash("Cotação atualizada com sucesso!", "success")
     return redirect(url_for("quote_detail", quote_id=quote_id))
+
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+
+@app.route("/admin")
+@admin_required
+def admin():
+    return render_template("admin.html", users=data_store.list_users_safe())
+
+
+@app.route("/admin/users", methods=["POST"])
+@admin_required
+def admin_create_user():
+    username  = request.form.get("username", "").strip()
+    password  = request.form.get("password", "")
+    password2 = request.form.get("password_confirm", "")
+    nome      = request.form.get("nome", "").strip()
+    email     = request.form.get("email", "").strip()
+    celular   = request.form.get("celular", "").strip()
+    empresa   = request.form.get("empresa", "").strip()
+    role      = request.form.get("role", "viewer")
+
+    if not username or not password:
+        flash("Username e senha são obrigatórios.", "danger")
+        return redirect(url_for("admin"))
+    if password != password2:
+        flash("As senhas não coincidem.", "danger")
+        return redirect(url_for("admin"))
+    if data_store.username_exists(username):
+        flash(f"Username '{username}' já existe.", "danger")
+        return redirect(url_for("admin"))
+
+    data_store.create_user(username, password, role=role,
+                           nome=nome, email=email, celular=celular, empresa=empresa)
+    flash(f"Usuário '{username}' criado com sucesso!", "success")
+    return redirect(url_for("admin"))
 
 
 # ── Logs ──────────────────────────────────────────────────────────────────────
