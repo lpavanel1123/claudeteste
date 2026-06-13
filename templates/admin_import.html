@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}Importar Cotações — Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-3">
+  <h5 class="page-title mb-0"><i class="fa fa-shield-halved me-2 text-cisco"></i>Administração</h5>
+  <span class="badge bg-cisco text-white ms-1" style="font-size:.7rem">Admin</span>
+</div>
+<ul class="nav nav-tabs mb-4">
+  <li class="nav-item">
+    <a class="nav-link" href="/admin"><i class="fa fa-users me-1"></i>Usuários</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link active" href="/admin/import"><i class="fa fa-file-excel me-1"></i>Importar Cotações</a>
+  </li>
+</ul>
+
+<div class="row g-4">
+
+  <!-- Passo 1 -->
+  <div class="col-12">
+    <div class="card shadow-sm cisco-card">
+      <div class="card-header">
+        <i class="fa fa-download me-2" style="color:var(--cisco-teal)"></i>
+        <span class="fw-semibold">Passo 1 — Baixar Template</span>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">
+          Baixe o arquivo Excel modelo, preencha com as cotações e faça o upload no Passo 2.
+          Cada linha representa uma cotação. Para <strong>atualizar</strong> um registro existente,
+          preencha a coluna <code>id</code> com o ID exibido no portal.
+          Deixe <code>id</code> vazio para <strong>criar</strong> um registro novo.
+        </p>
+        <a href="/admin/import/template" class="btn btn-cisco">
+          <i class="fa fa-file-excel me-2"></i>Baixar Template (.xlsx)
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Passo 2 -->
+  <div class="col-12">
+    <div class="card shadow-sm cisco-card">
+      <div class="card-header">
+        <i class="fa fa-upload me-2" style="color:var(--cisco-bright)"></i>
+        <span class="fw-semibold">Passo 2 — Enviar Planilha Preenchida</span>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="/admin/import/upload" enctype="multipart/form-data" id="form-import">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Arquivo Excel (.xlsx)</label>
+            <input type="file" name="file" id="file-input"
+                   class="form-control form-control-sm" accept=".xlsx,.xls" required>
+          </div>
+          <div id="file-preview" class="mb-3 d-none">
+            <div class="alert alert-info py-2 small mb-0 d-flex align-items-center gap-2">
+              <i class="fa fa-file-excel text-success"></i>
+              <span id="file-name" class="fw-semibold"></span>
+              <span class="text-muted" id="file-size"></span>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-cisco" id="btn-upload">
+            <i class="fa fa-upload me-1"></i>Processar Planilha
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Referência de colunas -->
+  <div class="col-12">
+    <div class="card shadow-sm cisco-card">
+      <div class="card-header">
+        <i class="fa fa-table me-2 text-muted"></i>
+        <span class="fw-semibold">Referência de Colunas</span>
+        <small class="text-muted ms-2">(ordem exata exigida no upload)</small>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>#</th>
+              <th>Coluna</th>
+              <th>Descrição</th>
+              <th>Valores aceitos</th>
+              <th class="text-center">Obrigatório</th>
+            </tr>
+          </thead>
+          <tbody class="small">
+            <tr><td class="text-muted">1</td><td><code>id</code></td><td>ID do registro (para atualizar)</td><td>ID de 12 chars do portal — vazio para criar novo</td><td class="text-center">—</td></tr>
+            <tr class="table-warning"><td class="text-muted">2</td><td><code>subject</code></td><td>Assunto da cotação</td><td>Texto livre</td><td class="text-center"><i class="fa fa-check text-success"></i></td></tr>
+            <tr class="table-warning"><td class="text-muted">3</td><td><code>request_type</code></td><td>Tipo</td><td>Cotação · Pedido</td><td class="text-center"><i class="fa fa-check text-success"></i></td></tr>
+            <tr><td class="text-muted">4</td><td><code>project_type</code></td><td>Tipo de Projeto</td><td>Novo Projeto · Obsolescência · NA</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">5</td><td><code>project_ref</code></td><td>Referência do Projeto</td><td>Texto livre</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">6</td><td><code>requester_name</code></td><td>Nome do Requisitante</td><td>Texto livre</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">7</td><td><code>department</code></td><td>Departamento</td><td>Texto livre</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">8</td><td><code>cnpj</code></td><td>CNPJ</td><td>XX.XXX.XXX/XXXX-XX</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">9</td><td><code>smart_account</code></td><td>Smart Account</td><td>Texto livre</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">10</td><td><code>smart_account_domain</code></td><td>Smart Account Domain</td><td>Texto livre</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">11</td><td><code>virtual_account</code></td><td>Virtual Account</td><td>Texto livre</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">12</td><td><code>status</code></td><td>Status</td><td>Em Aberto · Em Análise · Aprovada · Rejeitada · Ganha · Perdida</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">13</td><td><code>valor_total</code></td><td>Valor Total</td><td>Número sem R$ (ex: 250000)</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">14</td><td><code>responsavel_interno</code></td><td>Responsável Interno</td><td>Texto livre</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">15</td><td><code>fornecedor</code></td><td>Fornecedor</td><td>Logicalis · NTT · Outros</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">16</td><td><code>observacoes</code></td><td>Observações</td><td>Texto livre</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">17</td><td><code>projeto_id_vale</code></td><td>Projeto ID (Vale)</td><td>Texto livre</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">18</td><td><code>logicalis_id</code></td><td>Logicalis ID (ETC)</td><td>Texto livre</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">19</td><td><code>ntt_id</code></td><td>NTT ID</td><td>Texto livre</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">20</td><td><code>estimate_nacional</code></td><td>Estimate Nacional</td><td>Texto livre</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">21</td><td><code>estimate_importado</code></td><td>Estimate Importado</td><td>Texto livre</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">22</td><td><code>order_id</code></td><td>Order ID</td><td>Texto livre</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">23</td><td><code>deal_id</code></td><td>Deal ID</td><td>Texto livre</td><td class="text-center">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Result Modal -->
+{% if result %}
+<div class="modal fade" id="resultModal" tabindex="-1" aria-labelledby="resultModalLabel">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" id="resultModalLabel">
+          <i class="fa fa-circle-check text-success me-2"></i>Importação Concluída
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-3 pb-2">
+        <div class="row text-center g-3 mb-3">
+          <div class="col">
+            <div class="rounded-3 py-3 px-2" style="background:#e8f5e9">
+              <div class="fw-bold display-6 text-success">{{ result.created }}</div>
+              <div class="small text-muted mt-1">
+                <i class="fa fa-plus-circle me-1"></i>Criadas
+              </div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="rounded-3 py-3 px-2" style="background:#e3f2fd">
+              <div class="fw-bold display-6" style="color:var(--cisco-bright)">{{ result.updated }}</div>
+              <div class="small text-muted mt-1">
+                <i class="fa fa-pen-to-square me-1"></i>Atualizadas
+              </div>
+            </div>
+          </div>
+          {% if result.errors %}
+          <div class="col">
+            <div class="rounded-3 py-3 px-2" style="background:#fdecea">
+              <div class="fw-bold display-6 text-danger">{{ result.errors | length }}</div>
+              <div class="small text-muted mt-1">
+                <i class="fa fa-triangle-exclamation me-1"></i>Erros
+              </div>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+        {% if result.errors %}
+        <div class="alert alert-danger py-2 small mb-0">
+          <strong>Detalhes dos erros:</strong>
+          <ul class="mb-0 mt-1 ps-3">
+            {% for err in result.errors %}
+            <li>{{ err }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <a href="/quotes" class="btn btn-outline-secondary btn-sm">
+          <i class="fa fa-file-invoice me-1"></i>Ver Cotações
+        </a>
+        <button type="button" class="btn btn-cisco btn-sm" data-bs-dismiss="modal">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('file-input').addEventListener('change', function (e) {
+  const file = e.target.files[0];
+  if (file) {
+    document.getElementById('file-name').textContent = file.name;
+    const kb = (file.size / 1024).toFixed(1);
+    document.getElementById('file-size').textContent = `(${kb} KB)`;
+    document.getElementById('file-preview').classList.remove('d-none');
+  }
+});
+
+document.getElementById('form-import').addEventListener('submit', function () {
+  const btn = document.getElementById('btn-upload');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processando…';
+});
+
+{% if result %}
+document.addEventListener('DOMContentLoaded', function () {
+  new bootstrap.Modal(document.getElementById('resultModal')).show();
+});
+{% endif %}
+</script>
+{% endblock %}

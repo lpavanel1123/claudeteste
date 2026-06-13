@@ -2,7 +2,7 @@ from functools import wraps
 from datetime import datetime
 from pathlib import Path
 import json
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash, send_file
 import data_store
 import config
 
@@ -10,6 +10,19 @@ app = Flask(__name__)
 app.secret_key = config.PORTAL_SECRET_KEY or "dev-only-change-me"
 
 STATUSES = ["Em Aberto", "Em Análise", "Aprovada", "Rejeitada", "Ganha", "Perdida"]
+
+_IMPORT_COLS = (
+    "id", "subject", "request_type", "project_type", "project_ref",
+    "requester_name", "department", "cnpj",
+    "smart_account", "smart_account_domain", "virtual_account",
+    "status", "valor_total", "responsavel_interno", "fornecedor", "observacoes",
+    "projeto_id_vale", "logicalis_id", "ntt_id",
+    "estimate_nacional", "estimate_importado", "order_id", "deal_id",
+)
+_IMPORT_COL_WIDTHS = (
+    12, 42, 18, 22, 15, 24, 22, 22, 18, 24, 18,
+    20, 16, 24, 15, 32, 18, 18, 15, 18, 20, 15, 15,
+)
 
 
 @app.template_filter("date_br")
@@ -298,6 +311,203 @@ def admin_create_user():
                            nome=nome, email=email, celular=celular, empresa=empresa)
     flash(f"Usuário '{username}' criado com sucesso!", "success")
     return redirect(url_for("admin"))
+
+
+@app.route("/admin/import")
+@admin_required
+def admin_import():
+    result = session.pop("import_result", None)
+    return render_template("admin_import.html", result=result)
+
+
+@app.route("/admin/import/template")
+@admin_required
+def admin_import_template():
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
+    from io import BytesIO
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Cotações"
+
+    hdr_fill = PatternFill("solid", fgColor="005073")
+    hdr_font = Font(bold=True, color="FFFFFF", size=10)
+    ex_fill  = PatternFill("solid", fgColor="E8F4F8")
+    ex_font  = Font(italic=True, color="888888", size=10)
+    center   = Alignment(horizontal="center", vertical="center", wrap_text=False)
+
+    # Header row
+    for idx, (key, width) in enumerate(zip(_IMPORT_COLS, _IMPORT_COL_WIDTHS), 1):
+        cell = ws.cell(1, idx, key)
+        cell.font      = hdr_font
+        cell.fill      = hdr_fill
+        cell.alignment = center
+        ws.column_dimensions[get_column_letter(idx)].width = width
+
+    ws.row_dimensions[1].height = 22
+    ws.freeze_panes = "B2"
+
+    # Example row
+    example = [
+        "",                              # id (vazio = novo)
+        "Cotação Cisco Catalyst 9300",   # subject
+        "Cotação",                       # request_type
+        "Novo Projeto",                  # project_type
+        "PROJ-2026-001",                 # project_ref
+        "João da Silva",                 # requester_name
+        "TI - Infraestrutura",           # department
+        "33.592.510/0001-54",            # cnpj
+        "BR (Brasil)",                   # smart_account
+        "vale.com.br",                   # smart_account_domain
+        "BR-TI-SP",                      # virtual_account
+        "Em Aberto",                     # status
+        "250000",                        # valor_total
+        "Maria Fernanda",                # responsavel_interno
+        "Logicalis",                     # fornecedor
+        "Exemplo de observação",         # observacoes
+        "PROJ-VALE-001",                 # projeto_id_vale
+        "LOG-12345",                     # logicalis_id
+        "",                              # ntt_id
+        "280000",                        # estimate_nacional
+        "",                              # estimate_importado
+        "",                              # order_id
+        "",                              # deal_id
+    ]
+    for idx, val in enumerate(example, 1):
+        cell = ws.cell(2, idx, val)
+        cell.font = ex_font
+        cell.fill = ex_fill
+
+    # Dropdown validations
+    def _dv(formula, sqref):
+        dv = DataValidation(type="list", formula1=formula, allow_blank=True, showErrorMessage=False)
+        ws.add_data_validation(dv)
+        dv.sqref = sqref
+
+    _dv('"Cotação,Pedido"',                                               "C3:C10000")
+    _dv('"Novo Projeto,Obsolescência,NA"',                                "D3:D10000")
+    _dv('"Em Aberto,Em Análise,Aprovada,Rejeitada,Ganha,Perdida"',        "L3:L10000")
+    _dv('"Logicalis,NTT,Outros"',                                         "O3:O10000")
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name="template_cotacoes.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/admin/import/upload", methods=["POST"])
+@admin_required
+def admin_import_upload():
+    import uuid as _uuid
+    from openpyxl import load_workbook
+    from io import BytesIO
+
+    file = request.files.get("file")
+    if not file or not file.filename:
+        flash("Nenhum arquivo enviado.", "danger")
+        return redirect(url_for("admin_import"))
+
+    if not file.filename.lower().endswith((".xlsx", ".xls")):
+        flash("Formato inválido. Envie um arquivo .xlsx.", "danger")
+        return redirect(url_for("admin_import"))
+
+    try:
+        buf = BytesIO(file.read())
+        wb  = load_workbook(buf, data_only=True)
+        ws  = wb.active
+    except Exception as exc:
+        flash(f"Erro ao ler o arquivo: {exc}", "danger")
+        return redirect(url_for("admin_import"))
+
+    # Validate header row
+    actual_hdrs = [
+        str(ws.cell(1, c).value or "").strip()
+        for c in range(1, len(_IMPORT_COLS) + 1)
+    ]
+    if actual_hdrs != list(_IMPORT_COLS):
+        flash("Cabeçalhos não correspondem ao template. Baixe novamente e use como base.", "danger")
+        return redirect(url_for("admin_import"))
+
+    created, updated, errors = 0, 0, []
+    user    = session["user"]
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    deal_keys = [f["key"] for f in data_store.DEAL_FIELDS]
+
+    for row_idx in range(2, ws.max_row + 1):
+        row = {
+            key: (str(ws.cell(row_idx, c).value).strip()
+                  if ws.cell(row_idx, c).value is not None else "")
+            for c, key in enumerate(_IMPORT_COLS, 1)
+        }
+
+        subject = row["subject"]
+        if not subject:
+            continue  # skip empty / example rows
+
+        quote_id = row["id"]
+
+        extract_fields = {
+            "subject":               subject,
+            "request_type":          row["request_type"]         or "Cotação",
+            "project_type":          row["project_type"]         or "NA",
+            "project_ref":           row["project_ref"]          or "NA",
+            "requester_name":        row["requester_name"],
+            "department":            row["department"],
+            "cnpj":                  row["cnpj"],
+            "smart_account":         row["smart_account"],
+            "smart_account_domain":  row["smart_account_domain"],
+            "virtual_account":       row["virtual_account"],
+        }
+
+        raw_valor = row["valor_total"].replace(",", ".").replace("R$", "").strip()
+        ann_data = {
+            "status":               row["status"] or "Em Aberto",
+            "valor_total":          float(raw_valor) if raw_valor else None,
+            "responsavel_interno":  row["responsavel_interno"],
+            "fornecedor":           row["fornecedor"],
+            "observacoes":          row["observacoes"],
+        }
+
+        deal_data = {k: row.get(k, "") for k in deal_keys}
+        deal_clean = {k: v for k, v in deal_data.items() if v}
+
+        if quote_id:
+            existing = data_store.get_extraction_by_id(quote_id)
+            if existing:
+                data_store.update_extraction_fields(quote_id, extract_fields, subject, user)
+                data_store.save_annotation(quote_id, subject, ann_data, user)
+                if deal_clean:
+                    data_store.save_deal(quote_id, subject, deal_clean, user)
+                updated += 1
+            else:
+                errors.append(f"Linha {row_idx}: ID '{quote_id}' não encontrado.")
+        else:
+            new_id = _uuid.uuid4().hex[:12]
+            quote  = {
+                "id":             new_id,
+                "is_manual":      True,
+                "is_bulk_import": True,
+                "date":           now_str,
+                "from":           user,
+                "products":       [],
+                **extract_fields,
+            }
+            data_store.append_extraction_entry(quote, user)
+            data_store.save_annotation(new_id, subject, ann_data, user)
+            if deal_clean:
+                data_store.save_deal(new_id, subject, deal_clean, user)
+            created += 1
+
+    session["import_result"] = {"created": created, "updated": updated, "errors": errors}
+    return redirect(url_for("admin_import"))
 
 
 # ── Logs ──────────────────────────────────────────────────────────────────────

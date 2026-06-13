@@ -50,9 +50,27 @@
       </li>
       {% if session.get('role') == 'admin' %}
       <li class="nav-item">
-        <a class="nav-link {% if request.path.startswith('/admin') %}active{% endif %}" href="/admin">
-          <i class="fa-solid fa-shield-halved fa-fw"></i> Admin
+        <a class="nav-link admin-toggle {% if request.path.startswith('/admin') %}active{% endif %}"
+           data-bs-toggle="collapse" href="#adminSubmenu" role="button"
+           aria-expanded="{{ 'true' if request.path.startswith('/admin') else 'false' }}"
+           aria-controls="adminSubmenu" style="justify-content:space-between">
+          <span><i class="fa-solid fa-shield-halved fa-fw"></i> Admin</span>
+          <i class="fa fa-chevron-down admin-chevron" style="font-size:.7rem;opacity:.6"></i>
         </a>
+        <div class="collapse {% if request.path.startswith('/admin') %}show{% endif %}" id="adminSubmenu">
+          <ul class="nav flex-column admin-sub">
+            <li class="nav-item">
+              <a class="nav-link {% if request.path == '/admin' %}active{% endif %}" href="/admin">
+                <i class="fa-solid fa-users fa-fw"></i> Usuários
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.path.startswith('/admin/import') %}active{% endif %}" href="/admin/import">
+                <i class="fa-solid fa-file-excel fa-fw"></i> Importar Cotações
+              </a>
+            </li>
+          </ul>
+        </div>
       </li>
       {% endif %}
     </ul>

@@ -75,6 +75,14 @@ body    { background: var(--bg); color: var(--text); }
   font-weight: 600;
 }
 
+/* ── Sidebar submenu ── */
+.sidebar .admin-sub .nav-link {
+  font-size: .82rem;
+  padding: .45rem 1.4rem .45rem 2.8rem;
+}
+.sidebar .admin-toggle .admin-chevron { transition: transform .2s ease; }
+.sidebar .admin-toggle[aria-expanded="true"] .admin-chevron { transform: rotate(180deg); }
+
 /* ── Main content ── */
 .content { margin-left: var(--sidebar-w); padding: 2rem; flex: 1; }
 

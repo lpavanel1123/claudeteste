@@ -69,6 +69,43 @@ def load_extractions() -> list:
     return list(reversed(quotes))  # newest first
 
 
+def get_extraction_by_id(quote_id: str):
+    if not EXTRACTIONS_F.exists():
+        return None
+    entries = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8"))
+    for q in entries:
+        if "id" not in q:
+            q["id"] = _stable_id(q)
+        if q["id"] == quote_id:
+            return q
+    return None
+
+
+def update_extraction_fields(quote_id: str, updates: dict, subject: str, user: str) -> bool:
+    if not EXTRACTIONS_F.exists():
+        return False
+    entries = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8"))
+    for entry in entries:
+        if "id" not in entry:
+            entry["id"] = _stable_id(entry)
+        if entry["id"] == quote_id:
+            changes = {k: [entry.get(k), v] for k, v in updates.items() if entry.get(k) != v}
+            entry.update(updates)
+            EXTRACTIONS_F.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+            if changes:
+                _append_audit(quote_id, subject, changes, user, action="bulk_import_update")
+            return True
+    return False
+
+
+def append_extraction_entry(quote: dict, user: str) -> None:
+    entries = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8")) if EXTRACTIONS_F.exists() else []
+    entries.append(quote)
+    EXTRACTIONS_F.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+    _append_audit(quote["id"], quote.get("subject", ""),
+                  {"_criado": [None, quote["id"]]}, user, action="bulk_import_create")
+
+
 # ── Annotations ───────────────────────────────────────────────────────────────
 
 def load_annotations() -> dict:

@@ -2,10 +2,18 @@
 {% block title %}Admin — Portal{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center gap-2 mb-4">
+<div class="d-flex align-items-center gap-2 mb-3">
   <h5 class="page-title mb-0"><i class="fa fa-shield-halved me-2 text-cisco"></i>Administração</h5>
   <span class="badge bg-cisco text-white ms-1" style="font-size:.7rem">Admin</span>
 </div>
+<ul class="nav nav-tabs mb-4">
+  <li class="nav-item">
+    <a class="nav-link active" href="/admin"><i class="fa fa-users me-1"></i>Usuários</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="/admin/import"><i class="fa fa-file-excel me-1"></i>Importar Cotações</a>
+  </li>
+</ul>
 
 <div class="row g-4">
 
