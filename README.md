@@ -1,6 +1,6 @@
 # Portal de Cotações — Cisco Procurement Portal
 
-Sistema completo para **recebimento, extração e gestão de cotações** enviadas por email. Recebe emails via Cloudmailin, extrai dados estruturados do corpo e de anexos XLS, e disponibiliza um portal web com dashboard, gráficos, timeline de processo e gestão manual.
+Sistema completo para **recebimento, extração e gestão de cotações** enviadas por email. Recebe emails via Cloudmailin, extrai dados estruturados do corpo e de anexos XLS, e disponibiliza um portal web com dashboard, gráficos, timeline de processo, gestão manual e área administrativa.
 
 ---
 
@@ -26,7 +26,7 @@ Gmail / qualquer remetente
                               │
                               ▼
                    Portal Web Flask (porta 8080)
-          Dashboard · Cotações · Nova Cotação · Histórico
+     Dashboard · Cotações · Nova Cotação · Histórico · Admin
 ```
 
 ---
@@ -56,7 +56,8 @@ pip3 install -r requirements.txt
 | `flask` | Servidor web (webhook + portal) |
 | `python-dotenv` | Variáveis de ambiente via `.env` |
 | `xlrd` | Leitura de arquivos `.xls` legados |
-| `openpyxl` | Leitura de arquivos `.xlsx` |
+| `openpyxl` | Leitura e geração de arquivos `.xlsx` |
+| `werkzeug` | Hash de senhas (pbkdf2:sha256) |
 
 ---
 
@@ -92,8 +93,8 @@ Abra **4 terminais** (com o venv ativo em cada):
 | 3 | `./tunnel.sh` | Túnel SSH via serveo.net |
 | 4 | `python3 heartbeat.py` | Mantém o túnel ativo (ping a cada 4 min) |
 
-Acesse **http://localhost:8080** → login com `admin` / `admin123`  
-*(altere a senha após o primeiro acesso)*
+Acesse **http://localhost:8080** → login com `admin` / `admin123`
+*(altere a senha após o primeiro acesso via Admin → Usuários)*
 
 O Terminal 3 exibe a URL pública (ex: `https://abcdef.serveo.net`) — use-a no Cloudmailin.
 
@@ -117,33 +118,27 @@ No painel do Cloudmailin:
 |---|---|
 | **Dashboard** | KPIs + gráficos com atualização automática + seção Operacional |
 | **Cotações** | Lista filtrável por tipo, status e busca livre |
-| **Detalhe** | Visão completa de cada cotação com todas as seções abaixo |
+| **Detalhe** | Visão completa com todas as seções abaixo |
 | **Nova Cotação** | Formulário para inclusão manual completa |
 | **Histórico** | Log de auditoria de toda alteração, filtrável por usuário |
+| **Admin** | Gestão de usuários e importação batch (visível apenas para role=admin) |
 
 ### Seções do Detalhe de Cotação
 
 | Seção | Descrição |
 |---|---|
-| **Dados Extraídos Automaticamente** | Campos extraídos do email/XLS com opção de correção inline e histórico de versões |
+| **Dados Extraídos Automaticamente** | Campos extraídos do email/XLS com correção inline e histórico de versões |
 | **Informações Manuais** | Status, valor, responsável, fornecedor (Logicalis / NTT / Outros), observações |
 | **IDs & Estimates** | Projeto ID (Vale), Logicalis ID, NTT ID, Estimate Nacional/Importado, Order ID, Deal ID — campos condicionais por fornecedor |
 | **Timeline do Processo** | Etapas visuais com datas editáveis (ver abaixo) |
 | **Email na Íntegra** | Cabeçalhos, corpo texto e HTML do email recebido |
-| **Produtos** | Tabela de itens extraídos do XLS (Qtd, Part Number, Descrição) |
+| **Produtos** | Tabela editável com Qtd, Part Number, Descrição, Unit List Price, Lead Time — importável do CCW |
 
 ### Tags de entrada
 
 - 🟡 **Dados de Treinamento** — gerado via `seed_data.py`
 - 🔵 **Entrada Manual** — criado pelo formulário Nova Cotação
-
-### Dashboard — Seção Operacional
-
-Abaixo dos gráficos padrão, a seção Operacional exibe:
-
-- **Cotações e Pedidos por Fornecedor** — barras agrupadas por Logicalis, NTT, etc.
-- **Volume por Etapa do Processo** — barras horizontais com quantos itens estão em cada etapa
-- **Top 10 Mais Antigos** — tabela clicável com idade em dias colorida (verde < 30d · amarelo < 60d · vermelho > 60d) e etapa atual
+- 🟢 **Importação Batch** — criado via Admin → Importar Cotações
 
 ---
 
@@ -171,6 +166,37 @@ Cada cotação possui uma timeline visual com etapas específicas por tipo:
 
 ---
 
+## Produtos
+
+### Edição manual
+
+Na tela de detalhe, o card **Produtos** permite:
+- Editar quantidades, part numbers e descrições inline
+- Adicionar e remover linhas
+- Salvar com registro em audit log
+
+Se não houver produtos cadastrados, um botão **Adicionar Produto** abre o modo de edição diretamente.
+
+### Importar do CCW (.xls / .xlsx)
+
+Clique em **Importar CCW** para fazer upload do arquivo exportado do Cisco CCW.
+O sistema detecta automaticamente o cabeçalho e extrai:
+
+| Campo | Coluna CCW |
+|---|---|
+| Part Number | `Part Number` (col B) |
+| Descrição | `Part Description` (col C) |
+| Quantidade | `Quantity` (col J) |
+| Unit List Price | `Unit List Price` (col H) |
+| Lead Time | `Estimated Lead Time (in Days)` (col K) |
+| Discount % | `Discount %` (col M) — armazenado, não exibido |
+| Unit Net Price | `Unit Net Price` (col V) — armazenado, não exibido |
+| Extended Net Price | `Extended Net Price` (col W) — armazenado, não exibido |
+
+> Os campos de preço com desconto são armazenados no JSON mas não exibidos na interface.
+
+---
+
 ## IDs & Estimates — lógica por fornecedor
 
 | Fornecedor | Logicalis ID (ETC) | NTT ID |
@@ -178,6 +204,51 @@ Cada cotação possui uma timeline visual com etapas específicas por tipo:
 | Logicalis | ✅ editável | 🔒 bloqueado |
 | NTT | 🔒 bloqueado | ✅ editável |
 | Outros / vazio | ✅ editável | ✅ editável |
+
+---
+
+## Dashboard — Seção Operacional
+
+Abaixo dos gráficos padrão, a seção Operacional exibe:
+
+- **Cotações e Pedidos por Fornecedor** — barras agrupadas por Logicalis, NTT, etc.
+- **Volume por Etapa do Processo** — barras horizontais com quantos itens estão em cada etapa
+- **Top 10 Mais Antigos** — tabela clicável com idade em dias colorida (verde < 30d · amarelo < 60d · vermelho > 60d) e etapa atual
+
+---
+
+## Área Admin (role = admin)
+
+### Usuários (`/admin`)
+
+Criação de usuários com:
+- Nome completo, e-mail, celular, empresa
+- Username e senha (hash pbkdf2:sha256)
+- Role: `admin` (acesso total) ou `viewer` (acesso ao portal)
+
+### Importar Cotações batch (`/admin/import`)
+
+Importação em massa via Excel:
+
+**Passo 1 — Baixar template**
+`GET /admin/import/template` → gera `.xlsx` com 23 colunas, dropdowns de validação e linha de exemplo.
+
+**Passo 2 — Preencher e fazer upload**
+`POST /admin/import/upload` → valida cabeçalhos e processa linha a linha.
+
+**Lógica de match (update vs create):**
+
+| Prioridade | Campo verificado | Fonte |
+|---|---|---|
+| 1º | Coluna `id` preenchida | ID interno do portal |
+| 2º | `projeto_id_vale` | deals.json |
+| 3º | `logicalis_id` | deals.json |
+| 4º | `ntt_id` | deals.json |
+| — | Nenhum match | Cria novo registro |
+
+Ao finalizar: modal com contadores de **criadas**, **atualizadas** e **erros** por linha.
+
+Todas as operações são registradas no `audit_log.json` com action `bulk_import_create` ou `bulk_import_update`.
 
 ---
 
@@ -204,7 +275,7 @@ Gera 28 cotações com:
 - Equipamentos Cisco reais (Catalyst, Nexus, Firepower, APs)
 - Empresas brasileiras (Vale, Petrobras, Eletrobras…)
 - Status, valores e responsáveis variados
-- **Timelines** com progressão realista por estágio
+- Timelines com progressão realista por estágio
 - Marcadas como `is_training: true`
 
 ---
@@ -233,9 +304,11 @@ Gera 28 cotações com:
 │   ├── login.html
 │   ├── dashboard.html    # KPIs, 4 gráficos + seção Operacional
 │   ├── quotes.html       # Lista com filtros
-│   ├── quote_detail.html # Detalhe completo + edição + timeline
+│   ├── quote_detail.html # Detalhe completo + edição + timeline + produtos
 │   ├── new_quote.html    # Formulário de inclusão manual
-│   └── logs.html         # Histórico de auditoria
+│   ├── logs.html         # Histórico de auditoria
+│   ├── admin.html        # Gestão de usuários (admin only)
+│   └── admin_import.html # Importação batch via Excel (admin only)
 │
 ├── static/style.css      # Design system Cisco (#005073 · #049FD9 · #00BCEB)
 │
@@ -255,6 +328,7 @@ Gera 28 cotações com:
 | Medida | Implementação |
 |---|---|
 | Autenticação do webhook | Token secreto na URL verificado com `hmac.compare_digest` |
+| Controle de acesso por role | `login_required` e `admin_required` decorators |
 | Limite de payload | 1 MB máximo por requisição |
 | Sanitização de inputs | Newlines/tabs removidos antes de salvar |
 | Senhas em hash | `werkzeug.security` com `pbkdf2:sha256` |
@@ -271,4 +345,5 @@ Gera 28 cotações com:
 | Túnel cai | Instabilidade do serveo | `./tunnel.sh` reconecta automaticamente a cada 5s |
 | Portal vazio | Sem dados | Execute `python3 seed_data.py` |
 | Erro `scrypt` no Python 3.9 | OpenSSL sem suporte a scrypt | Já corrigido — usa `pbkdf2:sha256` |
-| Produtos não extraídos | Formato XLS diferente | Verifique se a tabela tem colunas "Qtd" e "Part" |
+| Produtos não extraídos do CCW | Formato XLS diferente | Verifique se é um export padrão CCW (cabeçalho "Part Number" na coluna B) |
+| Admin não aparece na sidebar | Usuário sem role=admin | Verifique `data/users.json` ou crie novo usuário via Admin |

@@ -210,6 +210,129 @@ def quote_new():
                            now=datetime.now().strftime("%Y-%m-%dT%H:%M"))
 
 
+@app.route("/quotes/<quote_id>/products", methods=["POST"])
+@login_required
+def quote_products(quote_id):
+    quote = next((q for q in data_store.load_extractions() if q["id"] == quote_id), None)
+    if not quote:
+        return "Cotação não encontrada", 404
+    products = []
+    fields = zip(
+        request.form.getlist("qty[]"),
+        request.form.getlist("part_number[]"),
+        request.form.getlist("description[]"),
+        request.form.getlist("unit_list_price[]"),
+        request.form.getlist("lead_time[]"),
+        request.form.getlist("discount_pct[]"),
+        request.form.getlist("unit_net_price[]"),
+        request.form.getlist("extended_net_price[]"),
+    )
+    for qty, part, desc, ulp, lt, disc, unp, enp in fields:
+        part = part.strip()
+        if part:
+            products.append({
+                "qty":                qty.strip() or "1",
+                "part_number":        part,
+                "description":        desc.strip(),
+                "unit_list_price":    ulp.strip(),
+                "lead_time":          lt.strip(),
+                "discount_pct":       disc.strip(),
+                "unit_net_price":     unp.strip(),
+                "extended_net_price": enp.strip(),
+            })
+    data_store.save_products(quote_id, quote.get("subject", ""), products, session["user"])
+    flash("Produtos atualizados com sucesso!", "success")
+    return redirect(url_for("quote_detail", quote_id=quote_id))
+
+
+@app.route("/quotes/<quote_id>/products/upload", methods=["POST"])
+@login_required
+def quote_products_upload(quote_id):
+    quote = next((q for q in data_store.load_extractions() if q["id"] == quote_id), None)
+    if not quote:
+        return "Cotação não encontrada", 404
+
+    file = request.files.get("xls_file")
+    if not file or not file.filename:
+        flash("Nenhum arquivo enviado.", "danger")
+        return redirect(url_for("quote_detail", quote_id=quote_id))
+
+    fname = file.filename.lower()
+    if not fname.endswith((".xls", ".xlsx")):
+        flash("Formato inválido. Envie um arquivo .xls ou .xlsx exportado do CCW.", "danger")
+        return redirect(url_for("quote_detail", quote_id=quote_id))
+
+    buf = file.read()
+    products = []
+
+    def _fmt(v):
+        if v is None or v == "":
+            return ""
+        if isinstance(v, float):
+            return str(int(v)) if v == int(v) else f"{v:.2f}"
+        return str(v).strip()
+
+    try:
+        if fname.endswith(".xls"):
+            import xlrd
+            wb = xlrd.open_workbook(file_contents=buf)
+            ws = wb.sheet_by_index(0)
+            hdr = next((r for r in range(ws.nrows)
+                        if str(ws.cell_value(r, 1)).strip() == "Part Number"), None)
+            if hdr is None:
+                flash("Coluna 'Part Number' não encontrada — verifique se é um export CCW.", "danger")
+                return redirect(url_for("quote_detail", quote_id=quote_id))
+            for r in range(hdr + 1, ws.nrows):
+                part = str(ws.cell_value(r, 1)).strip()
+                if not part:
+                    continue
+                products.append({
+                    "qty":                _fmt(ws.cell_value(r, 9))  or "1",
+                    "part_number":        part,
+                    "description":        str(ws.cell_value(r, 2)).strip(),
+                    "unit_list_price":    _fmt(ws.cell_value(r, 7)),
+                    "lead_time":          _fmt(ws.cell_value(r, 10)),
+                    "discount_pct":       _fmt(ws.cell_value(r, 12)),
+                    "unit_net_price":     _fmt(ws.cell_value(r, 21)),
+                    "extended_net_price": _fmt(ws.cell_value(r, 22)),
+                })
+        else:
+            from openpyxl import load_workbook
+            from io import BytesIO
+            wb = load_workbook(BytesIO(buf), data_only=True)
+            ws = wb.active
+            hdr = next((r for r in range(1, ws.max_row + 1)
+                        if str(ws.cell(r, 2).value or "").strip() == "Part Number"), None)
+            if hdr is None:
+                flash("Coluna 'Part Number' não encontrada — verifique se é um export CCW.", "danger")
+                return redirect(url_for("quote_detail", quote_id=quote_id))
+            for r in range(hdr + 1, ws.max_row + 1):
+                part = str(ws.cell(r, 2).value or "").strip()
+                if not part:
+                    continue
+                products.append({
+                    "qty":                _fmt(ws.cell(r, 10).value) or "1",
+                    "part_number":        part,
+                    "description":        _fmt(ws.cell(r, 3).value),
+                    "unit_list_price":    _fmt(ws.cell(r, 8).value),
+                    "lead_time":          _fmt(ws.cell(r, 11).value),
+                    "discount_pct":       _fmt(ws.cell(r, 13).value),
+                    "unit_net_price":     _fmt(ws.cell(r, 22).value),
+                    "extended_net_price": _fmt(ws.cell(r, 23).value),
+                })
+    except Exception as exc:
+        flash(f"Erro ao processar arquivo: {exc}", "danger")
+        return redirect(url_for("quote_detail", quote_id=quote_id))
+
+    if not products:
+        flash("Nenhum produto encontrado no arquivo.", "warning")
+        return redirect(url_for("quote_detail", quote_id=quote_id))
+
+    data_store.save_products(quote_id, quote.get("subject", ""), products, session["user"])
+    flash(f"{len(products)} produto(s) importado(s) do CCW com sucesso!", "success")
+    return redirect(url_for("quote_detail", quote_id=quote_id))
+
+
 @app.route("/quotes/<quote_id>/deal", methods=["POST"])
 @login_required
 def quote_deal(quote_id):
@@ -479,16 +602,30 @@ def admin_import_upload():
         deal_data = {k: row.get(k, "") for k in deal_keys}
         deal_clean = {k: v for k, v in deal_data.items() if v}
 
+        # Resolve which existing quote to update (if any)
+        matched_id = None
         if quote_id:
-            existing = data_store.get_extraction_by_id(quote_id)
-            if existing:
-                data_store.update_extraction_fields(quote_id, extract_fields, subject, user)
-                data_store.save_annotation(quote_id, subject, ann_data, user)
-                if deal_clean:
-                    data_store.save_deal(quote_id, subject, deal_clean, user)
-                updated += 1
+            if data_store.get_extraction_by_id(quote_id):
+                matched_id = quote_id
             else:
                 errors.append(f"Linha {row_idx}: ID '{quote_id}' não encontrado.")
+                continue
+        else:
+            # Try deal fields in priority order
+            for deal_key in ("projeto_id_vale", "logicalis_id", "ntt_id"):
+                val = row.get(deal_key, "").strip()
+                if val:
+                    found = data_store.find_quote_by_deal_field(deal_key, val)
+                    if found:
+                        matched_id = found
+                        break
+
+        if matched_id:
+            data_store.update_extraction_fields(matched_id, extract_fields, subject, user)
+            data_store.save_annotation(matched_id, subject, ann_data, user)
+            if deal_clean:
+                data_store.save_deal(matched_id, subject, deal_clean, user)
+            updated += 1
         else:
             new_id = _uuid.uuid4().hex[:12]
             quote  = {

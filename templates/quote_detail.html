@@ -381,25 +381,119 @@
 
 </div><!-- /row timeline+email -->
 
-{% if quote.products %}
-<div class="card shadow-sm mt-4 cisco-card">
-  <div class="card-header"><i class="fa fa-boxes-stacked me-2 text-cisco-bright"></i>Produtos ({{ quote.products|length }} itens)</div>
-  <div class="table-responsive">
-    <table class="table align-middle mb-0">
-      <thead class="table-light"><tr><th>Qtd</th><th>Part Number</th><th>Descrição</th></tr></thead>
-      <tbody>
-        {% for p in quote.products %}
-        <tr>
-          <td class="fw-bold text-cisco-bright">{{ p.qty }}</td>
-          <td><code class="text-cisco">{{ p.part_number }}</code></td>
-          <td class="text-muted small">{{ p.description if p.description != 'NA' else '—' }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+<!-- Produtos -->
+<div class="card shadow-sm mt-4 cisco-card" id="card-produtos">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>
+      <i class="fa fa-boxes-stacked me-2 text-cisco-bright"></i>
+      Produtos
+      <span class="badge bg-secondary ms-1" id="prod-count-badge">{{ quote.products|length }}</span>
+    </span>
+    <div class="d-flex gap-2 align-items-center">
+      <!-- Import CCW -->
+      <form method="POST" action="/quotes/{{ quote.id }}/products/upload"
+            enctype="multipart/form-data" id="form-ccw-upload">
+        <input type="file" name="xls_file" id="ccw-file-input"
+               class="d-none" accept=".xls,.xlsx">
+        <label for="ccw-file-input" class="btn btn-sm btn-outline-secondary mb-0" style="cursor:pointer">
+          <i class="fa fa-file-excel me-1"></i>Importar CCW
+        </label>
+      </form>
+      <!-- Edit toggle -->
+      <button class="btn btn-sm btn-outline-primary" onclick="toggleProducts()" id="btn-prod">
+        <i class="fa fa-pen me-1"></i>Editar
+      </button>
+    </div>
+  </div>
+
+  <!-- View mode -->
+  <div id="view-products">
+    {% if quote.products %}
+    <div class="table-responsive">
+      <table class="table align-middle mb-0" style="font-size:.84rem">
+        <thead class="table-light">
+          <tr>
+            <th style="width:55px">Qtd</th>
+            <th style="width:150px">Part Number</th>
+            <th>Descrição</th>
+            <th class="text-end" style="width:110px">Unit List (R$)</th>
+            <th class="text-end" style="width:100px">Lead Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in quote.products %}
+          <tr>
+            <td class="fw-bold text-cisco-bright">{{ p.qty }}</td>
+            <td><code style="font-size:.8rem;color:var(--cisco)">{{ p.part_number }}</code></td>
+            <td class="text-muted">{{ p.description if p.description not in ('NA', '', None) else '—' }}</td>
+            <td class="text-end text-muted">{{ p.unit_list_price if p.get('unit_list_price') else '—' }}</td>
+            <td class="text-end text-muted">
+              {% if p.get('lead_time') %}
+                {{ p.lead_time }} dias
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+      <i class="fa fa-box-open fa-2x mb-2 opacity-25 d-block"></i>
+      <div class="small mb-3">Nenhum produto cadastrado.</div>
+      <button class="btn btn-sm btn-cisco" onclick="toggleProducts(); addProd()">
+        <i class="fa fa-plus me-1"></i>Adicionar Produto
+      </button>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Edit mode -->
+  <div id="form-products" style="display:none">
+    <form method="POST" action="/quotes/{{ quote.id }}/products" id="form-prod-edit">
+      <div class="table-responsive">
+        <table class="table align-middle mb-0" style="font-size:.83rem">
+          <thead class="table-light">
+            <tr>
+              <th style="width:65px">Qtd</th>
+              <th style="width:150px">Part Number</th>
+              <th>Descrição</th>
+              <th style="width:110px">Unit List (R$)</th>
+              <th style="width:110px">Lead Time (dias)</th>
+              <th style="width:36px"></th>
+            </tr>
+          </thead>
+          <tbody id="tbody-prod-edit">
+            {% for p in quote.products %}
+            <tr>
+              <input type="hidden" name="discount_pct[]"       value="{{ p.discount_pct or '' }}">
+              <input type="hidden" name="unit_net_price[]"     value="{{ p.unit_net_price or '' }}">
+              <input type="hidden" name="extended_net_price[]" value="{{ p.extended_net_price or '' }}">
+              <td><input type="number" name="qty[]" class="form-control form-control-sm" value="{{ p.qty }}" min="1"></td>
+              <td><input type="text" name="part_number[]" class="form-control form-control-sm" value="{{ p.part_number }}"></td>
+              <td><input type="text" name="description[]" class="form-control form-control-sm" value="{{ p.description if p.description != 'NA' else '' }}"></td>
+              <td><input type="text" name="unit_list_price[]" class="form-control form-control-sm" value="{{ p.unit_list_price or '' }}" placeholder="0.00"></td>
+              <td><input type="text" name="lead_time[]" class="form-control form-control-sm" value="{{ p.lead_time or '' }}" placeholder="0"></td>
+              <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeProd(this)"><i class="fa fa-trash"></i></button></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-footer d-flex justify-content-between align-items-center gap-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addProd()">
+          <i class="fa fa-plus me-1"></i>Adicionar linha
+        </button>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleProducts()">Cancelar</button>
+          <button type="submit" class="btn btn-sm btn-cisco">
+            <i class="fa fa-save me-1"></i>Salvar Produtos
+          </button>
+        </div>
+      </div>
+    </form>
   </div>
 </div>
-{% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -439,5 +533,49 @@ function toggleCorrection() {
     ? '<i class="fa fa-pen me-1"></i>Corrigir'
     : '<i class="fa fa-times me-1"></i>Cancelar';
 }
+
+function toggleProducts() {
+  const view = document.getElementById('view-products');
+  const form = document.getElementById('form-products');
+  const btn  = document.getElementById('btn-prod');
+  const editing = form.style.display !== 'none';
+  form.style.display = editing ? 'none' : 'block';
+  view.style.display = editing ? 'block' : 'none';
+  btn.innerHTML = editing
+    ? '<i class="fa fa-pen me-1"></i>Editar'
+    : '<i class="fa fa-times me-1"></i>Cancelar';
+}
+
+const _PROD_ROW = `
+  <tr>
+    <input type="hidden" name="discount_pct[]" value="">
+    <input type="hidden" name="unit_net_price[]" value="">
+    <input type="hidden" name="extended_net_price[]" value="">
+    <td><input type="number" name="qty[]" class="form-control form-control-sm" value="1" min="1"></td>
+    <td><input type="text" name="part_number[]" class="form-control form-control-sm" placeholder="C9300-48P-A"></td>
+    <td><input type="text" name="description[]" class="form-control form-control-sm" placeholder="Descrição"></td>
+    <td><input type="text" name="unit_list_price[]" class="form-control form-control-sm" placeholder="0.00"></td>
+    <td><input type="text" name="lead_time[]" class="form-control form-control-sm" placeholder="0"></td>
+    <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeProd(this)"><i class="fa fa-trash"></i></button></td>
+  </tr>`;
+
+function addProd() {
+  const tbody = document.getElementById('tbody-prod-edit');
+  tbody.insertAdjacentHTML('beforeend', _PROD_ROW);
+}
+
+function removeProd(btn) {
+  const rows = document.querySelectorAll('#tbody-prod-edit tr');
+  if (rows.length > 1) btn.closest('tr').remove();
+}
+
+// Auto-submit on CCW file select
+document.getElementById('ccw-file-input').addEventListener('change', function () {
+  if (this.files.length > 0) {
+    const lbl = document.querySelector('label[for="ccw-file-input"]');
+    lbl.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando…';
+    document.getElementById('form-ccw-upload').submit();
+  }
+});
 </script>
 {% endblock %}

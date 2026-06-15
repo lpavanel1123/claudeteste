@@ -69,6 +69,16 @@ def load_extractions() -> list:
     return list(reversed(quotes))  # newest first
 
 
+def find_quote_by_deal_field(key: str, value: str):
+    """Returns quote_id if any deal entry has deals[id][key] == value, else None."""
+    if not value:
+        return None
+    for quote_id, deal in load_deals().items():
+        if (deal.get(key) or "").strip() == value.strip():
+            return quote_id
+    return None
+
+
 def get_extraction_by_id(quote_id: str):
     if not EXTRACTIONS_F.exists():
         return None
@@ -96,6 +106,23 @@ def update_extraction_fields(quote_id: str, updates: dict, subject: str, user: s
                 _append_audit(quote_id, subject, changes, user, action="bulk_import_update")
             return True
     return False
+
+
+def save_products(quote_id: str, subject: str, products: list, user: str) -> None:
+    if not EXTRACTIONS_F.exists():
+        return
+    entries = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8"))
+    for entry in entries:
+        if "id" not in entry:
+            entry["id"] = _stable_id(entry)
+        if entry["id"] == quote_id:
+            old_count = len(entry.get("products", []))
+            entry["products"] = products
+            EXTRACTIONS_F.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+            _append_audit(quote_id, subject,
+                          {"produtos": [f"{old_count} itens", f"{len(products)} itens"]},
+                          user, action="products_edit")
+            return
 
 
 def append_extraction_entry(quote: dict, user: str) -> None:
