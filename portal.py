@@ -5,6 +5,8 @@ import json
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash, send_file
 import data_store
 import config
+from classifier import classify as _classify
+import pid_kb as _kb
 
 app = Flask(__name__)
 app.secret_key = config.PORTAL_SECRET_KEY or "dev-only-change-me"
@@ -99,10 +101,12 @@ def api_stats():
 def quotes():
     all_quotes  = data_store.load_extractions()
     annotations = data_store.load_annotations()
+    timelines   = data_store.load_timelines()
 
-    tipo_f   = request.args.get("tipo", "")
-    status_f = request.args.get("status", "")
-    search   = request.args.get("q", "").lower()
+    tipo_f    = request.args.get("tipo", "")
+    status_f  = request.args.get("status", "")
+    tl_step_f = request.args.get("tl_step", "")
+    search    = request.args.get("q", "").lower()
 
     result = []
     for q in all_quotes:
@@ -111,9 +115,33 @@ def quotes():
         q["_valor"]  = ann.get("valor_total") or ""
         q["_resp"]   = ann.get("responsavel_interno", "")
 
-        if tipo_f   and q.get("request_type") != tipo_f:
+        # Compute current timeline step
+        request_type = q.get("request_type", "Cotação")
+        tl_steps     = data_store.TIMELINE_STEPS.get(request_type, data_store.TIMELINE_STEPS["Cotação"])
+        tl_dates     = timelines.get(q["id"], {}).get("dates", {})
+        done_count   = sum(1 for s in tl_steps if tl_dates.get(s["key"]))
+        total_steps  = len(tl_steps)
+        if done_count == total_steps:
+            q["_tl_label"] = "Concluído"
+            q["_tl_icon"]  = "fa-flag-checkered"
+            q["_tl_pct"]   = 100
+        elif done_count == 0:
+            q["_tl_label"] = tl_steps[0]["label"]
+            q["_tl_icon"]  = tl_steps[0]["icon"]
+            q["_tl_pct"]   = 0
+        else:
+            current        = tl_steps[done_count]
+            q["_tl_label"] = current["label"]
+            q["_tl_icon"]  = current["icon"]
+            q["_tl_pct"]   = int(done_count / total_steps * 100)
+        q["_tl_done"]  = done_count
+        q["_tl_total"] = total_steps
+
+        if tipo_f    and q.get("request_type") != tipo_f:
             continue
-        if status_f and q["_status"] != status_f:
+        if status_f  and q["_status"] != status_f:
+            continue
+        if tl_step_f and q["_tl_label"] != tl_step_f:
             continue
         if search:
             haystack = " ".join([
@@ -124,10 +152,13 @@ def quotes():
                 continue
         result.append(q)
 
+    # Collect unique tl_step labels for filter dropdown
+    all_tl_labels = sorted({q["_tl_label"] for q in result})
+
     return render_template(
         "quotes.html", quotes=result,
-        tipo_f=tipo_f, status_f=status_f, search=search,
-        statuses=STATUSES,
+        tipo_f=tipo_f, status_f=status_f, tl_step_f=tl_step_f, search=search,
+        statuses=STATUSES, tl_step_labels=all_tl_labels,
     )
 
 
@@ -143,10 +174,38 @@ def quote_detail(quote_id):
     deal     = data_store.load_deals().get(quote_id, {})
     request_type = corr.get("request_type", {}).get("current") or quote.get("request_type", "Cotação")
     tl_steps = data_store.TIMELINE_STEPS.get(request_type, data_store.TIMELINE_STEPS["Cotação"])
+
+    # ── Cálculo automático de previsão de conclusão ──
+    from datetime import date as _date, timedelta as _td
+    auto_forecast = None
+    aggressor     = None
+    inicio_str    = timeline.get("dates", {}).get("inicio_fabricacao", "")
+    if inicio_str:
+        try:
+            start  = _date.fromisoformat(inicio_str)
+            max_lt = 0
+            for p in quote.get("products", []):
+                lt_raw = str(p.get("lead_time") or "").strip()
+                if lt_raw and lt_raw.upper() != "N/A":
+                    try:
+                        lt = int(float(lt_raw))
+                        if lt > max_lt:
+                            max_lt = lt
+                            aggressor = {"part_number": p.get("part_number", ""),
+                                         "description": p.get("description", ""),
+                                         "lead_time":   lt}
+                    except ValueError:
+                        pass
+            if max_lt > 0:
+                auto_forecast = (start + _td(days=max_lt + 10)).isoformat()
+        except ValueError:
+            pass
+
     return render_template("quote_detail.html", quote=quote, ann=ann, corr=corr,
                            statuses=STATUSES, correctable=data_store.CORRECTABLE_FIELDS,
                            timeline=timeline, timeline_steps=tl_steps,
-                           deal=deal, deal_fields=data_store.DEAL_FIELDS)
+                           deal=deal, deal_fields=data_store.DEAL_FIELDS,
+                           auto_forecast=auto_forecast, aggressor=aggressor)
 
 
 @app.route("/quotes/new", methods=["GET", "POST"])
@@ -226,10 +285,14 @@ def quote_products(quote_id):
         request.form.getlist("discount_pct[]"),
         request.form.getlist("unit_net_price[]"),
         request.form.getlist("extended_net_price[]"),
+        request.form.getlist("tipo[]"),
+        request.form.getlist("arquitetura[]"),
+        request.form.getlist("categoria[]"),
     )
-    for qty, part, desc, ulp, lt, disc, unp, enp in fields:
+    for qty, part, desc, ulp, lt, disc, unp, enp, tipo, arq, cat in fields:
         part = part.strip()
         if part:
+            resolved_arch, resolved_cat = _kb.classify_with_kb(part, desc.strip(), _classify)
             products.append({
                 "qty":                qty.strip() or "1",
                 "part_number":        part,
@@ -239,9 +302,16 @@ def quote_products(quote_id):
                 "discount_pct":       disc.strip(),
                 "unit_net_price":     unp.strip(),
                 "extended_net_price": enp.strip(),
+                "tipo":               tipo or "Nacional",
+                "arquitetura":        arq or resolved_arch,
+                "categoria":          cat or resolved_cat,
             })
+    # Detect manual overrides and persist to KB
+    old_products = quote.get("products", [])
+    corrections = _kb.apply_manual_corrections(old_products, products)
     data_store.save_products(quote_id, quote.get("subject", ""), products, session["user"])
-    flash("Produtos atualizados com sucesso!", "success")
+    msg = f"Produtos atualizados! {corrections} correção(ões) salva(s) na base de PIDs." if corrections else "Produtos atualizados com sucesso!"
+    flash(msg, "success")
     return redirect(url_for("quote_detail", quote_id=quote_id))
 
 
@@ -262,6 +332,7 @@ def quote_products_upload(quote_id):
         flash("Formato inválido. Envie um arquivo .xls ou .xlsx exportado do CCW.", "danger")
         return redirect(url_for("quote_detail", quote_id=quote_id))
 
+    tipo = request.form.get("tipo", "Nacional")
     buf = file.read()
     products = []
 
@@ -272,53 +343,90 @@ def quote_products_upload(quote_id):
             return str(int(v)) if v == int(v) else f"{v:.2f}"
         return str(v).strip()
 
+    # Detect column indices dynamically from the header row.
+    # Supports both the modelo.xlsx layout (Part Number in col A) and legacy CCW exports.
+    _COL_KEYS = {
+        "part number":        "part",
+        "description":        "desc",
+        "qty":                "qty",
+        "unit list price":    "ulp",
+        "estimated lead time": "lt",
+        "disc(%)":            "disc",
+        "unit net price":     "unp",
+        "extended net price": "enp",
+    }
+
+    def _find_cols(header_cells):
+        cols = {}
+        for idx, cell in enumerate(header_cells):
+            key = str(cell or "").strip().lower()
+            for pattern, name in _COL_KEYS.items():
+                if pattern in key and name not in cols:
+                    cols[name] = idx
+        return cols
+
     try:
         if fname.endswith(".xls"):
             import xlrd
             wb = xlrd.open_workbook(file_contents=buf)
             ws = wb.sheet_by_index(0)
-            hdr = next((r for r in range(ws.nrows)
-                        if str(ws.cell_value(r, 1)).strip() == "Part Number"), None)
-            if hdr is None:
+            hdr_row = next((r for r in range(ws.nrows)
+                            if any("part number" in str(ws.cell_value(r, c)).lower()
+                                   for c in range(ws.ncols))), None)
+            if hdr_row is None:
                 flash("Coluna 'Part Number' não encontrada — verifique se é um export CCW.", "danger")
                 return redirect(url_for("quote_detail", quote_id=quote_id))
-            for r in range(hdr + 1, ws.nrows):
-                part = str(ws.cell_value(r, 1)).strip()
-                if not part:
+            cols = _find_cols([ws.cell_value(hdr_row, c) for c in range(ws.ncols)])
+            for r in range(hdr_row + 1, ws.nrows):
+                part = str(ws.cell_value(r, cols["part"])).strip() if "part" in cols else ""
+                if not part or part.lower() in ("none", "nan") or " " in part or ":" in part:
                     continue
+                desc = _fmt(ws.cell_value(r, cols["desc"])) if "desc" in cols else ""
+                arch, cat = _kb.classify_with_kb(part, desc, _classify)
                 products.append({
-                    "qty":                _fmt(ws.cell_value(r, 9))  or "1",
+                    "qty":                _fmt(ws.cell_value(r, cols["qty"]))  if "qty"  in cols else "1",
                     "part_number":        part,
-                    "description":        str(ws.cell_value(r, 2)).strip(),
-                    "unit_list_price":    _fmt(ws.cell_value(r, 7)),
-                    "lead_time":          _fmt(ws.cell_value(r, 10)),
-                    "discount_pct":       _fmt(ws.cell_value(r, 12)),
-                    "unit_net_price":     _fmt(ws.cell_value(r, 21)),
-                    "extended_net_price": _fmt(ws.cell_value(r, 22)),
+                    "description":        desc,
+                    "unit_list_price":    _fmt(ws.cell_value(r, cols["ulp"]))  if "ulp"  in cols else "",
+                    "lead_time":          _fmt(ws.cell_value(r, cols["lt"]))   if "lt"   in cols else "",
+                    "discount_pct":       _fmt(ws.cell_value(r, cols["disc"])) if "disc" in cols else "",
+                    "unit_net_price":     _fmt(ws.cell_value(r, cols["unp"]))  if "unp"  in cols else "",
+                    "extended_net_price": _fmt(ws.cell_value(r, cols["enp"]))  if "enp"  in cols else "",
+                    "tipo":               tipo,
+                    "arquitetura":        arch,
+                    "categoria":          cat,
                 })
         else:
             from openpyxl import load_workbook
             from io import BytesIO
             wb = load_workbook(BytesIO(buf), data_only=True)
             ws = wb.active
-            hdr = next((r for r in range(1, ws.max_row + 1)
-                        if str(ws.cell(r, 2).value or "").strip() == "Part Number"), None)
-            if hdr is None:
+            hdr_row = next((r for r in range(1, ws.max_row + 1)
+                            if any("part number" in str(ws.cell(r, c).value or "").lower()
+                                   for c in range(1, ws.max_column + 1))), None)
+            if hdr_row is None:
                 flash("Coluna 'Part Number' não encontrada — verifique se é um export CCW.", "danger")
                 return redirect(url_for("quote_detail", quote_id=quote_id))
-            for r in range(hdr + 1, ws.max_row + 1):
-                part = str(ws.cell(r, 2).value or "").strip()
-                if not part:
+            cols = _find_cols([ws.cell(hdr_row, c).value for c in range(1, ws.max_column + 1)])
+            for r in range(hdr_row + 1, ws.max_row + 1):
+                get = lambda k: ws.cell(r, cols[k] + 1).value if k in cols else None
+                part = str(get("part") or "").strip()
+                if not part or part.lower() in ("none", "nan") or " " in part or ":" in part:
                     continue
+                desc = _fmt(get("desc"))
+                arch, cat = _kb.classify_with_kb(part, desc, _classify)
                 products.append({
-                    "qty":                _fmt(ws.cell(r, 10).value) or "1",
+                    "qty":                _fmt(get("qty"))  or "1",
                     "part_number":        part,
-                    "description":        _fmt(ws.cell(r, 3).value),
-                    "unit_list_price":    _fmt(ws.cell(r, 8).value),
-                    "lead_time":          _fmt(ws.cell(r, 11).value),
-                    "discount_pct":       _fmt(ws.cell(r, 13).value),
-                    "unit_net_price":     _fmt(ws.cell(r, 22).value),
-                    "extended_net_price": _fmt(ws.cell(r, 23).value),
+                    "description":        desc,
+                    "unit_list_price":    _fmt(get("ulp")),
+                    "lead_time":          _fmt(get("lt")),
+                    "discount_pct":       _fmt(get("disc")),
+                    "unit_net_price":     _fmt(get("unp")),
+                    "extended_net_price": _fmt(get("enp")),
+                    "tipo":               tipo,
+                    "arquitetura":        arch,
+                    "categoria":          cat,
                 })
     except Exception as exc:
         flash(f"Erro ao processar arquivo: {exc}", "danger")
@@ -328,8 +436,8 @@ def quote_products_upload(quote_id):
         flash("Nenhum produto encontrado no arquivo.", "warning")
         return redirect(url_for("quote_detail", quote_id=quote_id))
 
-    data_store.save_products(quote_id, quote.get("subject", ""), products, session["user"])
-    flash(f"{len(products)} produto(s) importado(s) do CCW com sucesso!", "success")
+    data_store.append_products(quote_id, quote.get("subject", ""), products, session["user"])
+    flash(f"{len(products)} produto(s) importado(s) ({tipo}) e adicionados à lista!", "success")
     return redirect(url_for("quote_detail", quote_id=quote_id))
 
 
@@ -378,6 +486,23 @@ def quote_correct(quote_id):
     data_store.save_correction(quote_id, quote.get("subject", ""), fields, session["user"])
     flash("Dados extraídos corrigidos com sucesso!", "success")
     return redirect(url_for("quote_detail", quote_id=quote_id))
+
+
+@app.route("/quotes/<quote_id>/inline", methods=["POST"])
+@login_required
+def quote_inline_edit(quote_id):
+    """Salva um único campo da cotação via fetch (JSON). Usado pela edição inline da lista."""
+    quote = next((q for q in data_store.load_extractions() if q["id"] == quote_id), None)
+    if not quote:
+        return jsonify({"ok": False, "error": "não encontrada"}), 404
+    data = request.get_json(silent=True) or {}
+    field = data.get("field", "")
+    value = str(data.get("value", "")).strip()
+    allowed = {"subject", "requester_name", "department", "request_type"}
+    if field not in allowed or not value:
+        return jsonify({"ok": False, "error": "campo inválido"}), 400
+    data_store.update_extraction_fields(quote_id, {field: value}, quote.get("subject", ""), session["user"])
+    return jsonify({"ok": True, "value": value})
 
 
 @app.route("/quotes/<quote_id>/edit", methods=["POST"])

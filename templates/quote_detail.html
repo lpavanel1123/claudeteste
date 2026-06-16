@@ -256,8 +256,21 @@
               {% set forecast_val = tl_dates.get(step.extra_key, '') %}
               <div class="timeline-forecast">
                 <i class="fa fa-clock me-1"></i>{{ step.extra_label }}:
-                {% if forecast_val %}<strong>{{ forecast_val | date_br }}</strong>
-                {% else %}<span class="text-muted fst-italic">não definida</span>{% endif %}
+                {% if forecast_val %}
+                  <strong>{{ forecast_val | date_br }}</strong>
+                {% elif auto_forecast %}
+                  <strong class="text-cisco-bright">{{ auto_forecast | date_br }}</strong>
+                  <span class="text-muted ms-1" style="font-size:.75rem">(calculado)</span>
+                {% else %}
+                  <span class="text-muted fst-italic">não definida</span>
+                {% endif %}
+                {% if auto_forecast and aggressor %}
+                <div style="font-size:.72rem;color:#9ca3af;margin-top:2px">
+                  <i class="fa fa-circle-info me-1"></i>Base:
+                  <code style="font-size:.7rem">{{ aggressor.part_number }}</code>
+                  · {{ aggressor.lead_time }}d + 10d buffer
+                </div>
+                {% endif %}
               </div>
             {% endif %}
           </div>
@@ -392,12 +405,16 @@
     <div class="d-flex gap-2 align-items-center">
       <!-- Import CCW -->
       <form method="POST" action="/quotes/{{ quote.id }}/products/upload"
-            enctype="multipart/form-data" id="form-ccw-upload">
+            enctype="multipart/form-data" id="form-ccw-upload" class="d-flex align-items-center gap-1">
         <input type="file" name="xls_file" id="ccw-file-input"
                class="d-none" accept=".xls,.xlsx">
         <label for="ccw-file-input" class="btn btn-sm btn-outline-secondary mb-0" style="cursor:pointer">
           <i class="fa fa-file-excel me-1"></i>Importar CCW
         </label>
+        <select name="tipo" id="ccw-tipo-select" class="form-select form-select-sm" style="width:110px">
+          <option value="Nacional">Nacional</option>
+          <option value="Importado">Importado</option>
+        </select>
       </form>
       <!-- Edit toggle -->
       <button class="btn btn-sm btn-outline-primary" onclick="toggleProducts()" id="btn-prod">
@@ -409,29 +426,80 @@
   <!-- View mode -->
   <div id="view-products">
     {% if quote.products %}
+    <!-- Filtros -->
+    <div class="d-flex gap-2 flex-wrap px-3 pt-3 pb-2" style="font-size:.82rem">
+      <select id="f-arquitetura" class="form-select form-select-sm" style="width:auto" onchange="filterProducts()">
+        <option value="">Arquitetura (todas)</option>
+        <option>Enterprise Switching</option>
+        <option>Datacenter</option>
+        <option>Wireless</option>
+        <option>Routing</option>
+        <option>Segurança</option>
+        <option>IOT</option>
+        <option>Outros</option>
+      </select>
+      <select id="f-categoria" class="form-select form-select-sm" style="width:auto" onchange="filterProducts()">
+        <option value="">Categoria (todas)</option>
+        <option>Hardware</option>
+        <option>Software</option>
+        <option>Serviços</option>
+      </select>
+      <select id="f-tipo" class="form-select form-select-sm" style="width:auto" onchange="filterProducts()">
+        <option value="">Origem (todas)</option>
+        <option>Nacional</option>
+        <option>Importado</option>
+      </select>
+      <button class="btn btn-sm btn-outline-secondary" onclick="clearFilters()">
+        <i class="fa fa-times me-1"></i>Limpar
+      </button>
+      <span class="text-muted ms-auto align-self-center" id="prod-filter-count"></span>
+    </div>
     <div class="table-responsive">
-      <table class="table align-middle mb-0" style="font-size:.84rem">
+      <table class="table align-middle mb-0" id="tbl-products" style="font-size:.84rem">
         <thead class="table-light">
           <tr>
-            <th style="width:55px">Qtd</th>
-            <th style="width:150px">Part Number</th>
+            <th style="width:50px">Qtd</th>
+            <th style="width:145px">Part Number</th>
             <th>Descrição</th>
+            <th style="width:145px">Arquitetura</th>
+            <th style="width:90px">Categoria</th>
+            <th style="width:90px">Origem</th>
             <th class="text-end" style="width:110px">Unit List (R$)</th>
-            <th class="text-end" style="width:100px">Lead Time</th>
+            <th class="text-end" style="width:85px">Lead Time</th>
           </tr>
         </thead>
         <tbody>
           {% for p in quote.products %}
-          <tr>
+          <tr data-arch="{{ p.get('arquitetura','Outros') }}" data-cat="{{ p.get('categoria','Hardware') }}" data-tipo="{{ p.get('tipo','') }}">
             <td class="fw-bold text-cisco-bright">{{ p.qty }}</td>
             <td><code style="font-size:.8rem;color:var(--cisco)">{{ p.part_number }}</code></td>
-            <td class="text-muted">{{ p.description if p.description not in ('NA', '', None) else '—' }}</td>
-            <td class="text-end text-muted">{{ p.unit_list_price if p.get('unit_list_price') else '—' }}</td>
-            <td class="text-end text-muted">
-              {% if p.get('lead_time') %}
-                {{ p.lead_time }} dias
-              {% else %}—{% endif %}
+            <td class="text-muted" style="font-size:.8rem">{{ p.description if p.description not in ('NA', '', None) else '—' }}</td>
+            <td>
+              {% set arch = p.get('arquitetura','') %}
+              {% if arch == 'Enterprise Switching' %}<span class="badge" style="background:#00bceb;color:#000">Switching</span>
+              {% elif arch == 'Datacenter' %}<span class="badge bg-dark">Datacenter</span>
+              {% elif arch == 'Wireless' %}<span class="badge" style="background:#6f42c1">Wireless</span>
+              {% elif arch == 'Routing' %}<span class="badge bg-primary">Routing</span>
+              {% elif arch == 'Segurança' %}<span class="badge bg-danger">Segurança</span>
+              {% elif arch == 'IOT' %}<span class="badge bg-warning text-dark">IOT</span>
+              {% elif arch %}<span class="badge bg-secondary">{{ arch }}</span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
             </td>
+            <td>
+              {% set cat = p.get('categoria','') %}
+              {% if cat == 'Hardware' %}<span class="badge" style="background:#5c6bc0">Hardware</span>
+              {% elif cat == 'Software' %}<span class="badge bg-success">Software</span>
+              {% elif cat == 'Serviços' %}<span class="badge bg-secondary">Serviços</span>
+              {% elif cat %}<span class="badge bg-light text-dark border">{{ cat }}</span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td>
+              {% if p.get('tipo') == 'Importado' %}<span class="badge bg-warning text-dark">Importado</span>
+              {% elif p.get('tipo') == 'Nacional' %}<span class="badge" style="background:#00a86b">Nacional</span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td class="text-end text-muted">{{ p.unit_list_price if p.get('unit_list_price') else '—' }}</td>
+            <td class="text-end text-muted">{{ (p.lead_time ~ ' d') if p.get('lead_time') else '—' }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -455,11 +523,14 @@
         <table class="table align-middle mb-0" style="font-size:.83rem">
           <thead class="table-light">
             <tr>
-              <th style="width:65px">Qtd</th>
-              <th style="width:150px">Part Number</th>
+              <th style="width:50px">Qtd</th>
+              <th style="width:140px">Part Number</th>
               <th>Descrição</th>
-              <th style="width:110px">Unit List (R$)</th>
-              <th style="width:110px">Lead Time (dias)</th>
+              <th style="width:100px">Unit List</th>
+              <th style="width:75px">Lead Time</th>
+              <th style="width:130px">Arquitetura</th>
+              <th style="width:95px">Categoria</th>
+              <th style="width:95px">Origem</th>
               <th style="width:36px"></th>
             </tr>
           </thead>
@@ -474,6 +545,26 @@
               <td><input type="text" name="description[]" class="form-control form-control-sm" value="{{ p.description if p.description != 'NA' else '' }}"></td>
               <td><input type="text" name="unit_list_price[]" class="form-control form-control-sm" value="{{ p.unit_list_price or '' }}" placeholder="0.00"></td>
               <td><input type="text" name="lead_time[]" class="form-control form-control-sm" value="{{ p.lead_time or '' }}" placeholder="0"></td>
+              <td>
+                <select name="arquitetura[]" class="form-select form-select-sm">
+                  {% for a in ['Enterprise Switching','Datacenter','Wireless','Routing','Segurança','IOT','Outros'] %}
+                  <option value="{{ a }}" {{ 'selected' if p.get('arquitetura','Outros') == a }}>{{ a }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select name="categoria[]" class="form-select form-select-sm">
+                  {% for c in ['Hardware','Software','Serviços'] %}
+                  <option value="{{ c }}" {{ 'selected' if p.get('categoria','Hardware') == c }}>{{ c }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select name="tipo[]" class="form-select form-select-sm">
+                  <option value="Nacional" {{ 'selected' if p.get('tipo','Nacional') == 'Nacional' }}>Nacional</option>
+                  <option value="Importado" {{ 'selected' if p.get('tipo') == 'Importado' }}>Importado</option>
+                </select>
+              </td>
               <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeProd(this)"><i class="fa fa-trash"></i></button></td>
             </tr>
             {% endfor %}
@@ -556,8 +647,35 @@ const _PROD_ROW = `
     <td><input type="text" name="description[]" class="form-control form-control-sm" placeholder="Descrição"></td>
     <td><input type="text" name="unit_list_price[]" class="form-control form-control-sm" placeholder="0.00"></td>
     <td><input type="text" name="lead_time[]" class="form-control form-control-sm" placeholder="0"></td>
+    <td><select name="arquitetura[]" class="form-select form-select-sm"><option>Enterprise Switching</option><option>Datacenter</option><option>Wireless</option><option>Routing</option><option>Segurança</option><option>IOT</option><option>Outros</option></select></td>
+    <td><select name="categoria[]" class="form-select form-select-sm"><option>Hardware</option><option>Software</option><option>Serviços</option></select></td>
+    <td><select name="tipo[]" class="form-select form-select-sm"><option value="Nacional">Nacional</option><option value="Importado">Importado</option></select></td>
     <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeProd(this)"><i class="fa fa-trash"></i></button></td>
   </tr>`;
+
+function filterProducts() {
+  const arch = document.getElementById('f-arquitetura').value;
+  const cat  = document.getElementById('f-categoria').value;
+  const tipo = document.getElementById('f-tipo').value;
+  const rows = document.querySelectorAll('#tbl-products tbody tr');
+  let visible = 0;
+  rows.forEach(tr => {
+    const ok = (!arch || tr.dataset.arch === arch)
+            && (!cat  || tr.dataset.cat  === cat)
+            && (!tipo || tr.dataset.tipo === tipo);
+    tr.style.display = ok ? '' : 'none';
+    if (ok) visible++;
+  });
+  const el = document.getElementById('prod-filter-count');
+  if (el) el.textContent = (visible < rows.length) ? `${visible} de ${rows.length} item(s)` : '';
+}
+
+function clearFilters() {
+  ['f-arquitetura','f-categoria','f-tipo'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  filterProducts();
+}
 
 function addProd() {
   const tbody = document.getElementById('tbody-prod-edit');

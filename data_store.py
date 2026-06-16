@@ -125,6 +125,23 @@ def save_products(quote_id: str, subject: str, products: list, user: str) -> Non
             return
 
 
+def append_products(quote_id: str, subject: str, new_products: list, user: str) -> None:
+    if not EXTRACTIONS_F.exists():
+        return
+    entries = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8"))
+    for entry in entries:
+        if "id" not in entry:
+            entry["id"] = _stable_id(entry)
+        if entry["id"] == quote_id:
+            existing = entry.get("products", [])
+            entry["products"] = existing + new_products
+            EXTRACTIONS_F.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+            _append_audit(quote_id, subject,
+                          {"produtos": [f"{len(existing)} itens", f"{len(entry['products'])} itens (+{len(new_products)})"]},
+                          user, action="products_append")
+            return
+
+
 def append_extraction_entry(quote: dict, user: str) -> None:
     entries = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8")) if EXTRACTIONS_F.exists() else []
     entries.append(quote)

@@ -4,18 +4,18 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h5 class="page-title mb-0"><i class="fa-solid fa-file-invoice me-2 text-primary"></i>Cotações</h5>
-  <span class="badge bg-secondary rounded-pill">{{ quotes|length }} resultado(s)</span>
+  <span class="badge bg-secondary rounded-pill" id="result-count">{{ quotes|length }} resultado(s)</span>
 </div>
 
 <!-- Filtros -->
 <div class="card shadow-sm mb-4" style="border-radius:12px;border:none">
   <div class="card-body py-3">
     <form method="GET" class="row g-2 align-items-end">
-      <div class="col-12 col-md-4">
+      <div class="col-12 col-md-3">
         <label class="form-label small fw-semibold mb-1">Buscar</label>
-        <input type="text" name="q" class="form-control form-control-sm" placeholder="assunto, remetente, departamento..." value="{{ search }}">
+        <input type="text" name="q" class="form-control form-control-sm" placeholder="assunto, requisitante, departamento..." value="{{ search }}">
       </div>
-      <div class="col-6 col-md-3">
+      <div class="col-6 col-md-2">
         <label class="form-label small fw-semibold mb-1">Tipo</label>
         <select name="tipo" class="form-select form-select-sm">
           <option value="">Todos</option>
@@ -24,7 +24,7 @@
           <option {% if tipo_f=='NA' %}selected{% endif %} value="NA">NA</option>
         </select>
       </div>
-      <div class="col-6 col-md-3">
+      <div class="col-6 col-md-2">
         <label class="form-label small fw-semibold mb-1">Status</label>
         <select name="status" class="form-select form-select-sm">
           <option value="">Todos</option>
@@ -33,11 +33,56 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-12 col-md-2 d-flex gap-2">
-        <button type="submit" class="btn btn-primary btn-sm flex-fill">
+      <div class="col-6 col-md-2">
+        <label class="form-label small fw-semibold mb-1">Etapa</label>
+        <select name="tl_step" class="form-select form-select-sm">
+          <option value="">Todas</option>
+          {% for lbl in tl_step_labels %}
+            <option {% if tl_step_f == lbl %}selected{% endif %}>{{ lbl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-3 d-flex gap-2 align-items-end">
+        <button type="submit" class="btn btn-primary btn-sm">
           <i class="fa fa-search me-1"></i>Filtrar
         </button>
         <a href="/quotes" class="btn btn-outline-secondary btn-sm"><i class="fa fa-times"></i></a>
+
+        <!-- Toggle de colunas -->
+        <div class="dropdown ms-auto">
+          <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="fa fa-columns me-1"></i>Colunas
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end p-2" style="min-width:185px" id="col-toggle-menu">
+            <li><label class="dropdown-item px-1 py-1 d-flex align-items-center gap-2">
+              <input type="checkbox" class="col-toggle" data-col="0" checked> Data
+            </label></li>
+            <li><label class="dropdown-item px-1 py-1 d-flex align-items-center gap-2">
+              <input type="checkbox" class="col-toggle" data-col="1" checked> Requisitante
+            </label></li>
+            <li><label class="dropdown-item px-1 py-1 d-flex align-items-center gap-2">
+              <input type="checkbox" class="col-toggle" data-col="2" checked> Assunto
+            </label></li>
+            <li><label class="dropdown-item px-1 py-1 d-flex align-items-center gap-2">
+              <input type="checkbox" class="col-toggle" data-col="3" checked> Tipo
+            </label></li>
+            <li><label class="dropdown-item px-1 py-1 d-flex align-items-center gap-2">
+              <input type="checkbox" class="col-toggle" data-col="4" checked> Departamento
+            </label></li>
+            <li><label class="dropdown-item px-1 py-1 d-flex align-items-center gap-2">
+              <input type="checkbox" class="col-toggle" data-col="5" checked> Status
+            </label></li>
+            <li><label class="dropdown-item px-1 py-1 d-flex align-items-center gap-2">
+              <input type="checkbox" class="col-toggle" data-col="6" checked> Etapa Timeline
+            </label></li>
+            <li><label class="dropdown-item px-1 py-1 d-flex align-items-center gap-2">
+              <input type="checkbox" class="col-toggle" data-col="7" checked> Valor (R$)
+            </label></li>
+            <li><label class="dropdown-item px-1 py-1 d-flex align-items-center gap-2">
+              <input type="checkbox" class="col-toggle" data-col="8" checked> Responsável
+            </label></li>
+          </ul>
+        </div>
       </div>
     </form>
   </div>
@@ -46,48 +91,79 @@
 <!-- Tabela -->
 <div class="card shadow-sm" style="border-radius:12px;border:none">
   <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0">
+    <table class="table table-hover align-middle mb-0" id="quotes-table">
       <thead class="table-light">
         <tr>
-          <th>Data</th>
-          <th>Remetente</th>
-          <th>Assunto</th>
-          <th>Tipo</th>
-          <th>Departamento</th>
-          <th>Status</th>
-          <th>Valor (R$)</th>
-          <th>Responsável</th>
+          <th data-col="0">Data</th>
+          <th data-col="1">Requisitante</th>
+          <th data-col="2">Assunto</th>
+          <th data-col="3">Tipo</th>
+          <th data-col="4">Departamento</th>
+          <th data-col="5">Status</th>
+          <th data-col="6" style="min-width:170px">Etapa Timeline</th>
+          <th data-col="7">Valor (R$)</th>
+          <th data-col="8">Responsável</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
         {% if not quotes %}
-          <tr><td colspan="9" class="text-center text-muted py-4">Nenhuma cotação encontrada.</td></tr>
+          <tr><td colspan="10" class="text-center text-muted py-4">Nenhuma cotação encontrada.</td></tr>
         {% endif %}
         {% for q in quotes %}
-        <tr onclick="location.href='/quotes/{{ q.id }}'" style="cursor:pointer">
-          <td class="text-nowrap small text-muted">{{ q.date[:10] }}</td>
-          <td class="small">{{ q['from'] | truncate(30) }}</td>
-          <td>
-            <span class="fw-semibold small">{{ q.subject | truncate(40) }}</span>
+        <tr onclick="location.href='/quotes/{{ q.id }}'" style="cursor:pointer" class="quote-row">
+          <td class="text-nowrap small text-muted" data-col="0">{{ q.date[:10] }}</td>
+          <td class="small" data-col="1">{{ (q.get('requester_name') or q.get('from') or '—') | truncate(30) }}</td>
+          <td data-col="2">
+            <span class="fw-semibold small editable-subject"
+                  data-id="{{ q.id }}"
+                  data-field="subject"
+                  title="Clique para editar">{{ q.subject | truncate(50) }}</span>
             {% if q.get('is_training') %}<span class="badge-training ms-1">Treinamento</span>{% endif %}
           </td>
-          <td>
+          <td data-col="3">
             {% if q.request_type == 'Cotação' %}
               <span class="badge bg-primary">Cotação</span>
             {% elif q.request_type == 'Pedido' %}
               <span class="badge bg-info text-dark">Pedido</span>
             {% else %}
-              <span class="badge bg-light text-dark">NA</span>
+              <span class="badge bg-light text-dark border">NA</span>
             {% endif %}
           </td>
-          <td class="small text-muted">{{ (q.department or 'NA') | truncate(30) }}</td>
-          <td>
+          <td class="small text-muted" data-col="4">{{ (q.department or 'NA') | truncate(30) }}</td>
+          <td data-col="5">
             {% set sc = {'Em Aberto':'secondary','Em Análise':'warning','Aprovada':'success','Rejeitada':'danger','Ganha':'success','Perdida':'dark'} %}
             <span class="badge badge-status bg-{{ sc.get(q._status, 'secondary') }}">{{ q._status }}</span>
           </td>
-          <td class="small">{% if q._valor %}{{ "R$ {:,.2f}".format(q._valor) }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
-          <td class="small text-muted">{{ q._resp or '—' }}</td>
+
+          <!-- Etapa Timeline -->
+          <td data-col="6">
+            {% if q.get('_tl_total', 0) > 0 %}
+              <div class="d-flex align-items-center gap-2">
+                <div style="flex:1;min-width:0">
+                  <div class="d-flex align-items-center gap-1 mb-1">
+                    {% if q._tl_label == 'Concluído' %}
+                      <i class="fa fa-{{ q._tl_icon }} text-success" style="font-size:.75rem;width:12px"></i>
+                      <span class="small text-success fw-semibold" style="font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px">{{ q._tl_label }}</span>
+                    {% else %}
+                      <i class="fa fa-{{ q._tl_icon }} text-muted" style="font-size:.75rem;width:12px"></i>
+                      <span class="small text-muted" style="font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px" title="{{ q._tl_label }}">{{ q._tl_label }}</span>
+                    {% endif %}
+                    <span class="ms-auto text-muted" style="font-size:.7rem;flex-shrink:0">{{ q._tl_done }}/{{ q._tl_total }}</span>
+                  </div>
+                  <div class="progress" style="height:3px;border-radius:2px">
+                    <div class="progress-bar {% if q._tl_pct == 100 %}bg-success{% else %}bg-primary{% endif %}"
+                         style="width:{{ q._tl_pct }}%"></div>
+                  </div>
+                </div>
+              </div>
+            {% else %}
+              <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
+
+          <td class="small" data-col="7">{% if q._valor %}{{ "R$ {:,.2f}".format(q._valor) }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td class="small text-muted" data-col="8">{{ q._resp or '—' }}</td>
           <td><a href="/quotes/{{ q.id }}" class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation()"><i class="fa fa-eye"></i></a></td>
         </tr>
         {% endfor %}
@@ -95,4 +171,82 @@
     </table>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Toggle de colunas ─────────────────────────────────────────────────────────
+const STORAGE_KEY = 'quotes_cols_v2';
+const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+
+document.querySelectorAll('.col-toggle').forEach(cb => {
+  const col = cb.dataset.col;
+  if (saved && saved[col] === false) { cb.checked = false; toggleCol(col, false); }
+  cb.addEventListener('change', () => {
+    toggleCol(col, cb.checked);
+    persistCols();
+  });
+});
+
+function toggleCol(col, show) {
+  document.querySelectorAll(`[data-col="${col}"]`).forEach(el => {
+    el.style.display = show ? '' : 'none';
+  });
+}
+
+function persistCols() {
+  const state = {};
+  document.querySelectorAll('.col-toggle').forEach(cb => { state[cb.dataset.col] = cb.checked; });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+// ── Edição inline do Assunto ──────────────────────────────────────────────────
+document.querySelectorAll('.editable-subject').forEach(span => {
+  span.style.borderBottom = '1px dashed #adb5bd';
+  span.style.cursor = 'text';
+
+  span.addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (this.querySelector('input')) return;
+
+    const original = this.textContent.trim();
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = original;
+    input.className = 'form-control form-control-sm';
+    input.style.minWidth = '240px';
+    input.style.display = 'inline-block';
+
+    this.textContent = '';
+    this.appendChild(input);
+    input.focus();
+    input.select();
+
+    const save = async () => {
+      const value = input.value.trim() || original;
+      if (value === original) { restore(value); return; }
+      try {
+        const r = await fetch(`/quotes/${this.dataset.id}/inline`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({field: this.dataset.field, value})
+        });
+        const j = await r.json();
+        restore(j.ok ? value : original);
+      } catch { restore(original); }
+    };
+
+    const restore = (text) => {
+      this.textContent = text.length > 50 ? text.slice(0, 50) + '…' : text;
+      this.style.borderBottom = '1px dashed #adb5bd';
+    };
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); save(); }
+      if (e.key === 'Escape') { restore(original); }
+    });
+    input.addEventListener('blur', save);
+  });
+});
+</script>
 {% endblock %}
