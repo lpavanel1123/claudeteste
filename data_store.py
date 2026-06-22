@@ -400,6 +400,56 @@ def save_timeline(quote_id: str, subject: str, dates: dict, user: str) -> None:
         _append_audit(quote_id, subject, changes, user, action="timeline")
 
 
+# ── CCW Bot sync ─────────────────────────────────────────────────────────────
+
+def update_product_leadtimes(quote_id: str, subject: str, lines: list, user: str) -> int:
+    """Match CCW lines to products by part_number and update lead_time. Returns count updated."""
+    if not EXTRACTIONS_F.exists():
+        return 0
+    lt_map = {
+        str(l.get("part_number", "")).upper(): l["lead_time_days"]
+        for l in lines
+        if l.get("part_number") and l.get("lead_time_days") is not None
+    }
+    if not lt_map:
+        return 0
+    entries = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8"))
+    updated = 0
+    for entry in entries:
+        if "id" not in entry:
+            entry["id"] = _stable_id(entry)
+        if entry["id"] == quote_id:
+            for prod in entry.get("products", []):
+                pn = str(prod.get("part_number", "")).upper()
+                if pn in lt_map:
+                    prod["lead_time"] = str(lt_map[pn])
+                    updated += 1
+            EXTRACTIONS_F.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+            if updated:
+                _append_audit(quote_id, subject,
+                              {"lead_time_ccw": [None, f"{updated} produto(s) atualizados"]},
+                              user, action="ccw_sync")
+            return updated
+    return 0
+
+
+def update_deal_ccw_sync(quote_id: str, subject: str, order_id: str,
+                          max_delivery: str, user: str) -> None:
+    """Stamp last_ccw_sync and max_estimated_delivery into deals.json for a quote."""
+    _ensure()
+    deals = load_deals()
+    deal  = dict(deals.get(quote_id, {}))
+    deal["last_ccw_sync"]          = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    deal["max_estimated_delivery"] = max_delivery
+    if order_id:
+        deal["order_id"] = order_id
+    deals[quote_id] = deal
+    DEALS_F.write_text(json.dumps(deals, ensure_ascii=False, indent=2), encoding="utf-8")
+    _append_audit(quote_id, subject,
+                  {"ccw_sync": [None, f"order={order_id} delivery={max_delivery}"]},
+                  user, action="ccw_sync")
+
+
 # ── Users ─────────────────────────────────────────────────────────────────────
 
 def load_users() -> list:

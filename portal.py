@@ -772,6 +772,66 @@ def admin_import_upload():
     return redirect(url_for("admin_import"))
 
 
+# ── Bot API ──────────────────────────────────────────────────────────────────
+
+def _api_key_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        configured = config.PORTAL_API_KEY
+        if not configured:
+            return jsonify({"error": "PORTAL_API_KEY not configured on server"}), 503
+        if request.headers.get("X-API-Key", "") != configured:
+            return jsonify({"error": "unauthorized"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route("/api/v1/orders")
+@_api_key_required
+def api_orders():
+    """Returns quotes that have an order_id set. Used by bot_to_ccw to know what to query."""
+    quotes = data_store.load_extractions()
+    deals  = data_store.load_deals()
+    result = []
+    for q in quotes:
+        deal     = deals.get(q["id"], {})
+        order_id = (deal.get("order_id") or "").strip()
+        if order_id:
+            result.append({
+                "quote_id":  q["id"],
+                "order_id":  order_id,
+                "subject":   q.get("subject", ""),
+                "last_sync": deal.get("last_ccw_sync", ""),
+            })
+    return jsonify(result)
+
+
+@app.route("/api/v1/leadtime", methods=["POST"])
+@_api_key_required
+def api_leadtime():
+    """Receives CCW lead-time data from bot and updates products + deals."""
+    payload = request.get_json(silent=True)
+    if not payload:
+        return jsonify({"error": "invalid JSON"}), 400
+
+    quote_id     = payload.get("quote_id", "")
+    order_id     = payload.get("order_id", "")
+    max_delivery = payload.get("max_estimated_delivery", "")
+    lines        = payload.get("lines", [])
+
+    quote = next((q for q in data_store.load_extractions() if q["id"] == quote_id), None)
+    if not quote:
+        return jsonify({"error": "quote not found"}), 404
+
+    updated = data_store.update_product_leadtimes(
+        quote_id, quote.get("subject", ""), lines, "bot_ccw"
+    )
+    data_store.update_deal_ccw_sync(
+        quote_id, quote.get("subject", ""), order_id, max_delivery, "bot_ccw"
+    )
+    return jsonify({"ok": True, "products_updated": updated, "max_estimated_delivery": max_delivery})
+
+
 # ── Logs ──────────────────────────────────────────────────────────────────────
 
 @app.route("/logs")

@@ -11,3 +11,4 @@ INBOX_FILE           = "inbox.md"
 
 PORTAL_PORT          = int(os.getenv("PORTAL_PORT", "8080"))
 PORTAL_SECRET_KEY    = os.getenv("PORTAL_SECRET_KEY", "")
+PORTAL_API_KEY       = os.getenv("PORTAL_API_KEY", "")
