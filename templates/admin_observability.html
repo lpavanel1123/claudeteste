@@ -1,0 +1,610 @@
+{% extends "base.html" %}
+{% block title %}Observabilidade — Portal{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-3">
+  <h5 class="page-title mb-0"><i class="fa fa-shield-halved me-2 text-cisco"></i>Administração</h5>
+  <span class="badge bg-cisco text-white ms-1" style="font-size:.7rem">Admin</span>
+</div>
+
+<ul class="nav nav-tabs mb-4">
+  <li class="nav-item">
+    <a class="nav-link" href="/admin"><i class="fa fa-users me-1"></i>Usuários</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="/admin/import"><i class="fa fa-file-excel me-1"></i>Importar Cotações</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link active" href="/admin/observability"><i class="fa fa-heart-pulse me-1"></i>Observabilidade</a>
+  </li>
+</ul>
+
+<!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <span class="text-muted small"><i class="fa fa-clock me-1"></i>Atualizado: <span id="ts-label">—</span></span>
+  <button class="btn btn-sm btn-outline-secondary" id="btn-refresh" onclick="loadStatus()">
+    <i class="fa fa-rotate-right me-1"></i>Atualizar
+  </button>
+</div>
+
+<!-- ── Health Cards ───────────────────────────────────────────────────── -->
+<div class="row g-3 mb-4" id="health-cards">
+  <!-- Portal -->
+  <div class="col-6 col-lg-3"><div class="card cisco-card h-100 shadow-sm">
+    <div class="card-body py-3">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <i class="fa fa-server text-cisco"></i>
+        <span class="fw-semibold small">Portal</span>
+        <span class="badge ms-auto" id="badge-portal">…</span>
+      </div>
+      <div class="d-flex gap-3 mt-2">
+        <div class="text-center"><div class="fw-bold fs-5" id="latency-portal">—</div><div class="text-muted" style="font-size:.7rem">LATÊNCIA</div></div>
+        <div class="text-center"><div class="fw-bold fs-5" style="color:var(--cisco-teal)">8080</div><div class="text-muted" style="font-size:.7rem">PORTA</div></div>
+      </div>
+    </div>
+  </div></div>
+
+  <!-- Webhook -->
+  <div class="col-6 col-lg-3"><div class="card cisco-card h-100 shadow-sm">
+    <div class="card-body py-3">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <i class="fa fa-plug text-cisco"></i>
+        <span class="fw-semibold small">Webhook Server</span>
+        <span class="badge ms-auto" id="badge-webhook">…</span>
+      </div>
+      <div class="d-flex gap-3 mt-2">
+        <div class="text-center"><div class="fw-bold fs-5" id="latency-webhook">—</div><div class="text-muted" style="font-size:.7rem">LATÊNCIA</div></div>
+        <div class="text-center"><div class="fw-bold fs-5" style="color:var(--cisco-teal)">8025</div><div class="text-muted" style="font-size:.7rem">PORTA</div></div>
+      </div>
+    </div>
+  </div></div>
+
+  <!-- Webex API + token -->
+  <div class="col-6 col-lg-3"><div class="card cisco-card h-100 shadow-sm">
+    <div class="card-body py-3">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <i class="fa fa-cloud text-cisco"></i>
+        <span class="fw-semibold small">Webex API</span>
+        <span class="badge ms-auto" id="badge-webex">…</span>
+      </div>
+      <div class="d-flex gap-3 mt-1">
+        <div class="text-center"><div class="fw-bold fs-5" id="latency-webex">—</div><div class="text-muted" style="font-size:.7rem">LATÊNCIA</div></div>
+        <div class="text-center flex-fill text-start">
+          <div class="small fw-semibold" id="webex-user">—</div>
+          <div class="text-muted" style="font-size:.7rem">USUÁRIO</div>
+          <div class="mt-1"><span class="badge" id="badge-token">…</span></div>
+          <div class="text-muted mt-1" style="font-size:.65rem" id="token-expiry"></div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+
+  <!-- Bot CCW -->
+  <div class="col-6 col-lg-3"><div class="card cisco-card h-100 shadow-sm">
+    <div class="card-body py-3">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <i class="fa fa-robot text-cisco"></i>
+        <span class="fw-semibold small">Bot CCW</span>
+        <span class="badge ms-auto" id="badge-bot">…</span>
+      </div>
+      <div class="mt-2">
+        <div class="text-muted" style="font-size:.7rem">ÚLTIMA EXECUÇÃO</div>
+        <div class="fw-semibold small mt-1" id="bot-last-run">—</div>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<!-- ── Email & Token extra ────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3"><div class="card cisco-card shadow-sm">
+    <div class="card-body py-3 d-flex align-items-center gap-3">
+      <div style="font-size:2rem;color:var(--cisco-bright)"><i class="fa fa-envelope"></i></div>
+      <div>
+        <div class="fw-bold fs-3" id="email-count">—</div>
+        <div class="text-muted small">Emails recebidos</div>
+      </div>
+    </div>
+  </div></div>
+  <div class="col-6 col-lg-3"><div class="card cisco-card shadow-sm">
+    <div class="card-body py-3 d-flex align-items-center gap-3">
+      <div style="font-size:2rem;color:var(--cisco-teal)"><i class="fa fa-key"></i></div>
+      <div>
+        <div class="fw-semibold small" id="token-status-label">Token Webex</div>
+        <div class="small text-muted" id="token-expires-label">—</div>
+        <div class="small text-muted" id="token-refreshed-label"></div>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<!-- ── Bot Métricas ────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+  <!-- Resumo última execução -->
+  <div class="col-lg-4">
+    <div class="card cisco-card shadow-sm h-100">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="fa fa-robot text-muted"></i>
+        <span class="fw-semibold">Última Execução do Bot</span>
+      </div>
+      <div class="card-body" id="last-run-body">
+        <div class="text-muted small fst-italic">Carregando…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPIs numéricos -->
+  <div class="col-lg-4">
+    <div class="card cisco-card shadow-sm h-100">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="fa fa-stopwatch text-muted"></i>
+        <span class="fw-semibold">KPIs de Performance</span>
+      </div>
+      <div class="card-body" id="kpi-body">
+        <div class="text-muted small fst-italic">Carregando…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Orders da última execução -->
+  <div class="col-lg-4">
+    <div class="card cisco-card shadow-sm h-100">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="fa fa-list-check text-muted"></i>
+        <span class="fw-semibold">Ordens — Última Execução</span>
+      </div>
+      <div class="card-body p-0" id="orders-body">
+        <div class="text-muted small fst-italic p-3">Carregando…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Gráficos ────────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="card cisco-card shadow-sm">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="fa fa-chart-line text-muted"></i>
+        <span class="fw-semibold">Duração Total por Execução (s)</span>
+        <span class="badge bg-secondary ms-auto" id="chart1-runs">—</span>
+      </div>
+      <div class="card-body" style="height:220px;position:relative">
+        <canvas id="chart-duration"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card cisco-card shadow-sm">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="fa fa-chart-bar text-muted"></i>
+        <span class="fw-semibold">Ordens por Execução</span>
+        <span class="badge bg-secondary ms-auto" id="chart2-runs">—</span>
+      </div>
+      <div class="card-body" style="height:220px;position:relative">
+        <canvas id="chart-orders"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="card cisco-card shadow-sm">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="fa fa-chart-area text-muted"></i>
+        <span class="fw-semibold">Tempo Médio por Ordem (s)</span>
+      </div>
+      <div class="card-body" style="height:220px;position:relative">
+        <canvas id="chart-avg"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card cisco-card shadow-sm">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="fa fa-gauge-high text-muted"></i>
+        <span class="fw-semibold">Taxa de Sucesso Histórica (%)</span>
+      </div>
+      <div class="card-body" style="height:220px;position:relative">
+        <canvas id="chart-success-rate"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Testes de Performance (modular) ────────────────────────────────── -->
+<div class="card cisco-card shadow-sm mb-4" id="perf-card" style="display:none">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="fa fa-flask text-muted"></i>
+    <span class="fw-semibold">Testes de Performance</span>
+    <span class="badge bg-secondary ms-auto" id="perf-badge">—</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Teste</th><th>Resultado</th><th>Threshold</th><th>Status</th><th>Executado em</th>
+          </tr>
+        </thead>
+        <tbody id="perf-rows"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+'use strict';
+
+const CISCO_BLUE   = '#049fd9';
+const CISCO_TEAL   = '#00bceb';
+const CISCO_GREEN  = '#6abe39';
+const CISCO_RED    = '#e2231a';
+const CISCO_ORANGE = '#ff7300';
+const CISCO_GRAY   = '#aab0b8';
+
+let _charts = {};
+
+function destroyCharts() {
+  Object.values(_charts).forEach(c => c && c.destroy());
+  _charts = {};
+}
+
+function fmtDuration(s) {
+  if (s == null) return '—';
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60), r = s % 60;
+  return m + 'min ' + (r > 0 ? r + 's' : '');
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return iso.replace('T', ' ').substring(0, 16);
+}
+
+function statusBadge(status) {
+  const map = {
+    up:           ['bg-success',        'UP'],
+    down:         ['bg-danger',         'DOWN'],
+    degraded:     ['bg-warning text-dark','DEGRADADO'],
+    ok:           ['bg-success',        'OK'],
+    falha_parcial:['bg-warning text-dark','PARCIAL'],
+    falha_total:  ['bg-danger',         'FALHA'],
+    nunca_executado:['bg-secondary',    'NUNCA'],
+  };
+  const [cls, txt] = map[status] || ['bg-secondary', status];
+  return `<span class="badge ${cls}">${txt}</span>`;
+}
+
+function renderHealthCards(svcs, tokenInfo, emailCount) {
+  // Portal
+  const p = svcs.portal || {};
+  document.getElementById('badge-portal').className = 'badge ' + (p.status === 'up' ? 'bg-success' : 'bg-danger');
+  document.getElementById('badge-portal').textContent = (p.status || '?').toUpperCase();
+  document.getElementById('latency-portal').textContent = p.latency_ms != null ? p.latency_ms + 'ms' : '—';
+
+  // Webhook
+  const w = svcs.webhook || {};
+  document.getElementById('badge-webhook').className = 'badge ' + (w.status === 'up' ? 'bg-success' : 'bg-danger');
+  document.getElementById('badge-webhook').textContent = (w.status || '?').toUpperCase();
+  document.getElementById('latency-webhook').textContent = w.latency_ms != null ? w.latency_ms + 'ms' : '—';
+
+  // Webex API + token
+  const x = svcs.webex_api || {};
+  const xUp = x.status === 'up';
+  document.getElementById('badge-webex').className = 'badge ' + (xUp ? 'bg-success' : x.status === 'degraded' ? 'bg-warning text-dark' : 'bg-danger');
+  document.getElementById('badge-webex').textContent = (x.status || '?').toUpperCase();
+  document.getElementById('latency-webex').textContent = x.latency_ms != null ? x.latency_ms + 'ms' : '—';
+  document.getElementById('webex-user').textContent = x.user || (x.token_valid === false ? 'Token expirado' : '—');
+
+  const tokenBadge = document.getElementById('badge-token');
+  if (x.token_valid === true) {
+    tokenBadge.className = 'badge bg-success'; tokenBadge.textContent = 'TOKEN VÁLIDO';
+  } else if (x.token_expired || x.token_valid === false) {
+    tokenBadge.className = 'badge bg-danger'; tokenBadge.textContent = 'EXPIRADO';
+  } else {
+    tokenBadge.className = 'badge bg-secondary'; tokenBadge.textContent = '—';
+  }
+
+  // Token expiry info
+  const expEl = document.getElementById('token-expiry');
+  if (tokenInfo && tokenInfo.expires_at) {
+    const exp = new Date(tokenInfo.expires_at);
+    const now = new Date();
+    const diffDays = Math.round((exp - now) / 86400000);
+    expEl.textContent = diffDays > 0 ? `Expira em ${diffDays}d (${exp.toLocaleDateString('pt-BR')})` : `Expirou em ${exp.toLocaleDateString('pt-BR')}`;
+    expEl.style.color = diffDays <= 2 ? '#e2231a' : diffDays <= 7 ? '#ff7300' : '#aab0b8';
+  } else {
+    expEl.textContent = '';
+  }
+
+  // Resumo token nos cards extras
+  const tlabel = document.getElementById('token-status-label');
+  const texp   = document.getElementById('token-expires-label');
+  const tref   = document.getElementById('token-refreshed-label');
+  if (x.token_valid === true) {
+    tlabel.innerHTML = '<span class="text-success fw-semibold"><i class="fa fa-check me-1"></i>Token válido</span>';
+    tlabel.querySelector('span').innerHTML += x.user ? ` — ${x.user}` : '';
+  } else if (x.token_expired || x.token_valid === false) {
+    tlabel.innerHTML = '<span class="text-danger fw-semibold"><i class="fa fa-times me-1"></i>Token expirado</span>';
+  } else {
+    tlabel.textContent = 'Token Webex';
+  }
+  if (tokenInfo && tokenInfo.expires_at) {
+    const exp = new Date(tokenInfo.expires_at);
+    const diffDays = Math.round((exp - new Date()) / 86400000);
+    texp.textContent = `Expira: ${exp.toLocaleDateString('pt-BR')} (${diffDays}d)`;
+    texp.style.color = diffDays <= 2 ? '#e2231a' : diffDays <= 7 ? '#ff7300' : '';
+  } else { texp.textContent = ''; }
+  if (tokenInfo && tokenInfo.refreshed_at) {
+    tref.textContent = `Renovado: ${fmtDate(tokenInfo.refreshed_at)}`;
+  } else { tref.textContent = ''; }
+
+  // Emails
+  document.getElementById('email-count').textContent = emailCount != null ? emailCount : '—';
+
+  // Bot
+  const b = svcs.bot_ccw || {};
+  const bstatus = b.status || 'nunca_executado';
+  const bmap = { ok:'bg-success', falha_parcial:'bg-warning text-dark', falha_total:'bg-danger', nunca_executado:'bg-secondary' };
+  const btxt = { ok:'OK', falha_parcial:'PARCIAL', falha_total:'FALHA', nunca_executado:'NUNCA' };
+  const botBadge = document.getElementById('badge-bot');
+  botBadge.className = 'badge ' + (bmap[bstatus] || 'bg-secondary');
+  botBadge.textContent = btxt[bstatus] || bstatus.toUpperCase();
+  document.getElementById('bot-last-run').textContent = fmtDate(b.last_run);
+}
+
+function renderLastRun(runs) {
+  const el  = document.getElementById('last-run-body');
+  if (!runs || runs.length === 0) {
+    el.innerHTML = '<div class="text-muted small fst-italic">Nenhuma execução registrada.</div>';
+    return;
+  }
+  const r   = runs[runs.length - 1];
+  const pct = r.total_orders > 0 ? Math.round(r.success / r.total_orders * 100) : 0;
+  const barColor = pct === 100 ? CISCO_GREEN : pct >= 50 ? CISCO_ORANGE : CISCO_RED;
+  el.innerHTML = `
+    <div class="row g-2 text-center mb-3">
+      <div class="col-4">
+        <div class="fw-bold fs-4" style="color:var(--cisco-bright)">${r.total_orders}</div>
+        <div class="text-muted" style="font-size:.7rem">ORDENS</div>
+      </div>
+      <div class="col-4">
+        <div class="fw-bold fs-4 text-success">${r.success}</div>
+        <div class="text-muted" style="font-size:.7rem">SUCESSO</div>
+      </div>
+      <div class="col-4">
+        <div class="fw-bold fs-4 ${r.failures > 0 ? 'text-danger' : 'text-muted'}">${r.failures}</div>
+        <div class="text-muted" style="font-size:.7rem">FALHAS</div>
+      </div>
+    </div>
+    <div class="mb-3">
+      <div class="d-flex justify-content-between small mb-1">
+        <span class="text-muted">Taxa de sucesso</span><span class="fw-semibold">${pct}%</span>
+      </div>
+      <div class="progress" style="height:6px">
+        <div class="progress-bar" style="width:${pct}%;background:${barColor}"></div>
+      </div>
+    </div>
+    <div class="small text-muted">
+      <div><i class="fa fa-play me-1"></i>Início: <strong>${fmtDate(r.started_at)}</strong></div>
+      <div><i class="fa fa-stop me-1"></i>Fim:    <strong>${fmtDate(r.ended_at)}</strong></div>
+      <div><i class="fa fa-clock me-1"></i>Duração: <strong>${fmtDuration(r.total_seconds)}</strong></div>
+    </div>`;
+}
+
+function renderKPIs(runs) {
+  const el = document.getElementById('kpi-body');
+  if (!runs || runs.length === 0) {
+    el.innerHTML = '<div class="text-muted small fst-italic">Sem dados.</div>';
+    return;
+  }
+  const totalRuns  = runs.length;
+  const allSecs    = runs.map(r => r.total_seconds).filter(Boolean);
+  const avgTotal   = allSecs.length ? Math.round(allSecs.reduce((a,b) => a+b,0) / allSecs.length) : 0;
+  const avgPerOrd  = runs.map(r => r.avg_seconds_per_order).filter(Boolean);
+  const avgAvgOrd  = avgPerOrd.length ? Math.round(avgPerOrd.reduce((a,b) => a+b,0) / avgPerOrd.length) : 0;
+  const allSuccess = runs.reduce((a,r) => a + (r.success||0), 0);
+  const allTotal   = runs.reduce((a,r) => a + (r.total_orders||0), 0);
+  const globalPct  = allTotal > 0 ? Math.round(allSuccess / allTotal * 100) : 0;
+  const lastRun    = runs[runs.length-1];
+  el.innerHTML = `
+    <div class="row g-2 text-center mb-3">
+      <div class="col-6">
+        <div class="fw-bold" style="font-size:1.6rem;color:var(--cisco-bright)">${fmtDuration(lastRun.total_seconds)}</div>
+        <div class="text-muted" style="font-size:.7rem">DURAÇÃO ÚLTIMA RUN</div>
+      </div>
+      <div class="col-6">
+        <div class="fw-bold" style="font-size:1.6rem;color:var(--cisco-teal)">${fmtDuration(lastRun.avg_seconds_per_order ? Math.round(lastRun.avg_seconds_per_order) : 0)}</div>
+        <div class="text-muted" style="font-size:.7rem">TEMPO MÉDIO / ORDEM</div>
+      </div>
+    </div>
+    <hr class="my-2">
+    <div class="row g-2 text-center">
+      <div class="col-4">
+        <div class="fw-bold fs-5">${totalRuns}</div>
+        <div class="text-muted" style="font-size:.7rem">EXECUÇÕES</div>
+      </div>
+      <div class="col-4">
+        <div class="fw-bold fs-5">${fmtDuration(avgTotal)}</div>
+        <div class="text-muted" style="font-size:.7rem">MÉDIA RUN</div>
+      </div>
+      <div class="col-4">
+        <div class="fw-bold fs-5 ${globalPct >= 90 ? 'text-success' : globalPct >= 60 ? 'text-warning' : 'text-danger'}">${globalPct}%</div>
+        <div class="text-muted" style="font-size:.7rem">SUCESSO GLOBAL</div>
+      </div>
+    </div>`;
+}
+
+function renderOrdersTable(runs) {
+  const el = document.getElementById('orders-body');
+  if (!runs || runs.length === 0) {
+    el.innerHTML = '<div class="text-muted small fst-italic p-3">Sem dados.</div>';
+    return;
+  }
+  const orders = (runs[runs.length-1].orders || []);
+  if (!orders.length) {
+    el.innerHTML = '<div class="text-muted small fst-italic p-3">Sem ordens registradas.</div>';
+    return;
+  }
+  const rows = orders.map(o => {
+    const icon  = o.status === 'ok' ? `<i class="fa fa-check-circle text-success"></i>` : `<i class="fa fa-times-circle text-danger"></i>`;
+    const secs  = o.seconds != null ? `${o.seconds}s` : '—';
+    const deliv = o.max_delivery || '—';
+    return `<tr>
+      <td class="ps-3">${icon}</td>
+      <td><code class="small">${o.order_id}</code></td>
+      <td class="small text-center text-muted">${secs}</td>
+      <td class="small text-muted">${deliv}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<table class="table table-sm align-middle mb-0">
+    <thead class="table-light"><tr><th class="ps-3"></th><th>Order ID</th><th class="text-center">Tempo</th><th>Max Delivery</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+function buildCharts(runs) {
+  destroyCharts();
+  if (!runs || runs.length === 0) return;
+
+  const labels  = runs.map((r, i) => {
+    const d = r.started_at ? r.started_at.substring(5, 16).replace('T', ' ') : `#${i+1}`;
+    return d;
+  });
+  const total = runs.length;
+  document.getElementById('chart1-runs').textContent = total + ' runs';
+  document.getElementById('chart2-runs').textContent = total + ' runs';
+
+  const chartOpts = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#ccc', font: { size: 11 } } } },
+    scales: {
+      x: { ticks: { color: '#888', maxRotation: 45, font: { size: 10 } }, grid: { color: '#2a2a2a' } },
+      y: { ticks: { color: '#888', font: { size: 10 } }, grid: { color: '#2a2a2a' } },
+    },
+  };
+
+  // Chart 1: Duração total
+  _charts.duration = new Chart(document.getElementById('chart-duration'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Duração (s)', data: runs.map(r => r.total_seconds),
+        borderColor: CISCO_BLUE, backgroundColor: CISCO_BLUE + '33',
+        tension: 0.3, fill: true, pointRadius: 4, pointHoverRadius: 6,
+      }],
+    },
+    options: { ...chartOpts },
+  });
+
+  // Chart 2: Ordens OK vs Falha (stacked bar)
+  _charts.orders = new Chart(document.getElementById('chart-orders'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Sucesso', data: runs.map(r => r.success || 0), backgroundColor: CISCO_GREEN },
+        { label: 'Falha',   data: runs.map(r => r.failures || 0), backgroundColor: CISCO_RED },
+      ],
+    },
+    options: {
+      ...chartOpts,
+      scales: { ...chartOpts.scales, x: { ...chartOpts.scales.x, stacked: true }, y: { ...chartOpts.scales.y, stacked: true, ticks: { ...chartOpts.scales.y.ticks, stepSize: 1 } } },
+    },
+  });
+
+  // Chart 3: Tempo médio por ordem
+  _charts.avg = new Chart(document.getElementById('chart-avg'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Avg s/ordem', data: runs.map(r => r.avg_seconds_per_order ? Math.round(r.avg_seconds_per_order) : null),
+        borderColor: CISCO_TEAL, backgroundColor: CISCO_TEAL + '33',
+        tension: 0.3, fill: true, pointRadius: 4, spanGaps: true,
+      }],
+    },
+    options: { ...chartOpts },
+  });
+
+  // Chart 4: Taxa de sucesso histórica (%)
+  _charts.rate = new Chart(document.getElementById('chart-success-rate'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Sucesso (%)',
+        data: runs.map(r => r.total_orders > 0 ? Math.round(r.success / r.total_orders * 100) : null),
+        borderColor: CISCO_GREEN, backgroundColor: CISCO_GREEN + '22',
+        tension: 0.3, fill: true, pointRadius: 4, spanGaps: true,
+      }],
+    },
+    options: {
+      ...chartOpts,
+      scales: {
+        ...chartOpts.scales,
+        y: { ...chartOpts.scales.y, min: 0, max: 100, ticks: { ...chartOpts.scales.y.ticks, callback: v => v + '%' } },
+      },
+    },
+  });
+}
+
+function renderPerfTests(data) {
+  if (!data || !data.tests || !data.tests.length) return;
+  document.getElementById('perf-card').style.display = '';
+  document.getElementById('perf-badge').textContent  = data.tests.length + ' testes';
+  const rows = data.tests.map(t => {
+    const pass    = t.status === 'pass';
+    const icon    = pass ? `<i class="fa fa-check-circle text-success"></i>` : `<i class="fa fa-times-circle text-danger"></i>`;
+    const result  = t.value != null ? t.value + (t.unit ? ' ' + t.unit : '') : '—';
+    const thresh  = t.threshold != null ? '< ' + t.threshold + (t.unit ? ' ' + t.unit : '') : '—';
+    return `<tr>
+      <td class="ps-3 fw-semibold small">${t.name}</td>
+      <td class="small">${result}</td>
+      <td class="small text-muted">${thresh}</td>
+      <td>${icon}</td>
+      <td class="small text-muted">${t.run_at ? fmtDate(t.run_at) : '—'}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('perf-rows').innerHTML = rows;
+}
+
+async function loadStatus() {
+  document.getElementById('btn-refresh').disabled = true;
+  try {
+    const res  = await fetch('/api/v1/status');
+    const data = await res.json();
+
+    document.getElementById('ts-label').textContent = new Date().toLocaleTimeString('pt-BR');
+
+    renderHealthCards(data.services || {}, data.token_info || {}, data.email_count);
+
+    const runs = (data.bot_metrics || {}).runs || [];
+    renderLastRun(runs);
+    renderKPIs(runs);
+    renderOrdersTable(runs);
+    buildCharts(runs);
+
+    // perf tests via bot_metrics.performance_tests (opcional)
+    renderPerfTests((data.bot_metrics || {}).performance_tests);
+
+  } catch(e) {
+    console.error('Erro ao carregar status:', e);
+  } finally {
+    document.getElementById('btn-refresh').disabled = false;
+  }
+}
+
+// Carga inicial + auto-refresh a cada 60s
+loadStatus();
+setInterval(loadStatus, 60000);
+</script>
+<style>
+#chart-duration,#chart-orders,#chart-avg,#chart-success-rate { max-height:200px }
+</style>
+{% endblock %}

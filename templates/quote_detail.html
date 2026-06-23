@@ -267,8 +267,12 @@
                 {% if auto_forecast and aggressor %}
                 <div style="font-size:.72rem;color:#9ca3af;margin-top:2px">
                   <i class="fa fa-circle-info me-1"></i>Base:
-                  <code style="font-size:.7rem">{{ aggressor.part_number }}</code>
-                  · {{ aggressor.lead_time }}d + 10d buffer
+                  {% if aggressor.source is defined and aggressor.source == 'CCW' %}
+                    <code style="font-size:.7rem">CCW</code> · sync {{ aggressor.last_sync }}
+                  {% else %}
+                    <code style="font-size:.7rem">{{ aggressor.part_number }}</code>
+                    · {{ aggressor.lead_time }}d + 10d buffer
+                  {% endif %}
                 </div>
                 {% endif %}
               </div>

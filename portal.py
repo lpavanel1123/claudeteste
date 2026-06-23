@@ -179,27 +179,33 @@ def quote_detail(quote_id):
     from datetime import date as _date, timedelta as _td
     auto_forecast = None
     aggressor     = None
-    inicio_str    = timeline.get("dates", {}).get("inicio_fabricacao", "")
-    if inicio_str:
-        try:
-            start  = _date.fromisoformat(inicio_str)
-            max_lt = 0
-            for p in quote.get("products", []):
-                lt_raw = str(p.get("lead_time") or "").strip()
-                if lt_raw and lt_raw.upper() != "N/A":
-                    try:
-                        lt = int(float(lt_raw))
-                        if lt > max_lt:
-                            max_lt = lt
-                            aggressor = {"part_number": p.get("part_number", ""),
-                                         "description": p.get("description", ""),
-                                         "lead_time":   lt}
-                    except ValueError:
-                        pass
-            if max_lt > 0:
-                auto_forecast = (start + _td(days=max_lt + 10)).isoformat()
-        except ValueError:
-            pass
+    # Se o bot CCW sincronizou, usa max_estimated_delivery diretamente
+    ccw_delivery = deal.get("max_estimated_delivery", "") if deal else ""
+    if ccw_delivery:
+        auto_forecast = ccw_delivery
+        aggressor     = {"source": "CCW", "last_sync": deal.get("last_ccw_sync", "")}
+    else:
+        inicio_str = timeline.get("dates", {}).get("inicio_fabricacao", "")
+        if inicio_str:
+            try:
+                start  = _date.fromisoformat(inicio_str)
+                max_lt = 0
+                for p in quote.get("products", []):
+                    lt_raw = str(p.get("lead_time") or "").strip()
+                    if lt_raw and lt_raw.upper() != "N/A":
+                        try:
+                            lt = int(float(lt_raw))
+                            if lt > max_lt:
+                                max_lt = lt
+                                aggressor = {"part_number": p.get("part_number", ""),
+                                             "description": p.get("description", ""),
+                                             "lead_time":   lt}
+                        except ValueError:
+                            pass
+                if max_lt > 0:
+                    auto_forecast = (start + _td(days=max_lt + 10)).isoformat()
+            except ValueError:
+                pass
 
     return render_template("quote_detail.html", quote=quote, ann=ann, corr=corr,
                            statuses=STATUSES, correctable=data_store.CORRECTABLE_FIELDS,
@@ -823,13 +829,150 @@ def api_leadtime():
     if not quote:
         return jsonify({"error": "quote not found"}), 404
 
-    updated = data_store.update_product_leadtimes(
-        quote_id, quote.get("subject", ""), lines, "bot_ccw"
-    )
     data_store.update_deal_ccw_sync(
         quote_id, quote.get("subject", ""), order_id, max_delivery, "bot_ccw"
     )
-    return jsonify({"ok": True, "products_updated": updated, "max_estimated_delivery": max_delivery})
+    return jsonify({"ok": True, "max_estimated_delivery": max_delivery})
+
+
+# ── Observabilidade ───────────────────────────────────────────────────────────
+
+_BOT_METRICS = Path(__file__).parent.parent / "bot_to_ccw" / "metrics.json"
+
+
+def _service_check(url: str, timeout: int = 4) -> dict:
+    import urllib.request as _req
+    import urllib.error   as _err2
+    import time as _t
+    t0 = _t.time()
+    try:
+        with _req.urlopen(url, timeout=timeout) as r:
+            return {"status": "up", "latency_ms": round((_t.time() - t0) * 1000), "code": r.status}
+    except _err2.HTTPError as e:
+        lat = round((_t.time() - t0) * 1000)
+        if e.code in (401, 403, 404):
+            return {"status": "up", "latency_ms": lat, "code": e.code}
+        return {"status": "degraded", "latency_ms": lat, "code": e.code}
+    except Exception as ex:
+        return {"status": "down", "latency_ms": None, "message": str(ex)[:80]}
+
+
+@app.route("/admin/observability")
+@admin_required
+def admin_observability():
+    return render_template("admin_observability.html")
+
+
+_BOT_DIR        = Path(__file__).parent.parent / "bot_to_ccw"
+_BOT_ENV        = _BOT_DIR / ".env"
+_BOT_TOKEN_INFO = _BOT_DIR / "token_info.json"
+_INBOX_FILE     = Path(__file__).parent / config.INBOX_FILE
+
+
+def _read_bot_env_value(key: str) -> str:
+    if not _BOT_ENV.exists():
+        return ""
+    import re
+    for line in _BOT_ENV.read_text(encoding="utf-8").splitlines():
+        m = re.match(rf'^{key}=["\']?([^"\'#\n]+)["\']?', line.strip())
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
+@app.route("/api/v1/status")
+@admin_required
+def api_status():
+    import time as _t
+    import urllib.request as _req
+    import urllib.error   as _err2
+
+    services = {}
+
+    # Portal — sempre up (estamos respondendo)
+    services["portal"] = {"status": "up", "latency_ms": 0, "label": "Portal"}
+
+    # Webhook server
+    wh = _service_check(f"http://localhost:{config.WEBHOOK_PORT}/health")
+    wh["label"] = f"Webhook Server (:{config.WEBHOOK_PORT})"
+    services["webhook"] = wh
+
+    # Webex API — usa o token real do bot para validar + checar latência
+    webex_token = _read_bot_env_value("WEBEX_USER_TOKEN")
+    t0 = _t.time()
+    webex_user  = None
+    webex_valid = False
+    try:
+        r = _req.Request(
+            "https://webexapis.com/v1/people/me",
+            headers={"Authorization": f"Bearer {webex_token}" if webex_token else "Bearer probe"},
+        )
+        try:
+            with _req.urlopen(r, timeout=5) as resp:
+                lat = round((_t.time() - t0) * 1000)
+                import json as _json2
+                data = _json2.loads(resp.read())
+                webex_user  = data.get("displayName", "")
+                webex_valid = True
+                services["webex_api"] = {"status": "up", "latency_ms": lat, "token_valid": True, "user": webex_user}
+        except _err2.HTTPError as e:
+            lat = round((_t.time() - t0) * 1000)
+            if e.code == 401:
+                services["webex_api"] = {"status": "up", "latency_ms": lat, "token_valid": False, "token_expired": True}
+            elif e.code == 403:
+                services["webex_api"] = {"status": "up", "latency_ms": lat, "token_valid": True}
+            else:
+                services["webex_api"] = {"status": "degraded", "latency_ms": lat, "code": e.code}
+    except Exception as ex:
+        services["webex_api"] = {"status": "down", "latency_ms": None, "message": str(ex)[:60]}
+    services["webex_api"]["label"] = "Webex API"
+
+    # Token info (expiry)
+    token_info = {}
+    if _BOT_TOKEN_INFO.exists():
+        try:
+            token_info = json.loads(_BOT_TOKEN_INFO.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    # Bot CCW — lê metrics.json
+    bot_metrics = {"runs": []}
+    if _BOT_METRICS.exists():
+        try:
+            bot_metrics = json.loads(_BOT_METRICS.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    last_run   = bot_metrics["runs"][-1] if bot_metrics["runs"] else None
+    bot_status = "nunca_executado"
+    if last_run:
+        bot_status = "ok" if last_run.get("failures", 0) == 0 else "falha_parcial"
+        if last_run.get("success", 0) == 0:
+            bot_status = "falha_total"
+    services["bot_ccw"] = {
+        "status":   bot_status,
+        "label":    "Bot CCW (run_daily)",
+        "last_run": last_run.get("started_at") if last_run else None,
+    }
+
+    # Contagem de emails no inbox.md
+    email_count = 0
+    if _INBOX_FILE.exists():
+        try:
+            text = _INBOX_FILE.read_text(encoding="utf-8")
+            email_count = text.count("\n---\n") + (1 if text.startswith("---\n") else 0)
+            if email_count == 0 and "---" in text:
+                email_count = text.count("\n---")
+        except Exception:
+            pass
+
+    return jsonify({
+        "services":    services,
+        "token_info":  token_info,
+        "email_count": email_count,
+        "bot_metrics": bot_metrics,
+        "timestamp":   datetime.now().isoformat(),
+    })
 
 
 # ── Logs ──────────────────────────────────────────────────────────────────────
