@@ -17,8 +17,9 @@ CORRECTABLE_FIELDS = [
     "cnpj", "smart_account", "smart_account_domain", "virtual_account", "project_ref",
 ]
 
-TIMELINES_F = DATA_DIR / "timelines.json"
-DEALS_F     = DATA_DIR / "deals.json"
+TIMELINES_F       = DATA_DIR / "timelines.json"
+DEALS_F           = DATA_DIR / "deals.json"
+CCW_VALIDATIONS_F = DATA_DIR / "ccw_validations.json"
 
 DEAL_FIELDS = [
     {"key": "projeto_id_vale",       "label": "Projeto ID (Vale)"},
@@ -312,6 +313,12 @@ def get_stats() -> dict:
         except Exception:
             return datetime.min
 
+    def _parse_step_date(d):
+        try:
+            return datetime.strptime(d, "%Y-%m-%d")
+        except Exception:
+            return None
+
     active = [q for q in quotes if q["_status"] in {"Em Aberto", "Em Análise", "Aprovada"}]
     oldest = sorted(active, key=lambda q: _parse_date(q.get("date", "")))[:10]
     top10  = []
@@ -319,12 +326,18 @@ def get_stats() -> dict:
         rtype      = q.get("request_type", "Cotação")
         steps_list = TIMELINE_STEPS.get(rtype, TIMELINE_STEPS["Cotação"])
         tl_dates   = timelines.get(q["id"], {}).get("dates", {})
-        stage      = "Concluído"
+        stage           = "Concluído"
+        stage_entry     = _parse_date(q.get("date", ""))
+        last_step_entry = None
         for step in steps_list:
-            if not tl_dates.get(step["key"]):
+            step_date = _parse_step_date(tl_dates.get(step["key"], ""))
+            if not step_date:
                 stage = step["label"]
                 break
-        age = (now - _parse_date(q.get("date", ""))).days
+            last_step_entry = step_date
+        if last_step_entry:
+            stage_entry = last_step_entry
+        age = (now - stage_entry).days
         top10.append({
             "id":      q["id"],
             "subject": (q.get("subject") or "—")[:55],
@@ -354,6 +367,91 @@ def get_stats() -> dict:
         "chart_etapas": {"labels": list(etapas.keys()), "data": list(etapas.values())},
         "top10": top10,
     }
+
+
+def compute_auto_forecast(quote: dict, timeline: dict, deal: dict) -> tuple:
+    """
+    Calcula a previsão de entrega de um pedido. Usa max_estimated_delivery do CCW
+    se disponível; caso contrário, estima a partir de início_fabricação + maior lead_time + 10d.
+    Retorna (forecast_date_str_or_None, aggressor_dict_or_None).
+    """
+    from datetime import date as _date, timedelta as _td
+
+    ccw_delivery = deal.get("max_estimated_delivery", "") if deal else ""
+    if ccw_delivery:
+        return ccw_delivery, {"source": "CCW", "last_sync": deal.get("last_ccw_sync", "")}
+
+    aggressor = None
+    inicio_str = timeline.get("dates", {}).get("inicio_fabricacao", "")
+    if not inicio_str:
+        return None, None
+    try:
+        start  = _date.fromisoformat(inicio_str)
+    except ValueError:
+        return None, None
+
+    max_lt = 0
+    for p in quote.get("products", []):
+        lt_raw = str(p.get("lead_time") or "").strip()
+        if lt_raw and lt_raw.upper() != "N/A":
+            try:
+                lt = int(float(lt_raw))
+                if lt > max_lt:
+                    max_lt = lt
+                    aggressor = {"part_number": p.get("part_number", ""),
+                                 "description": p.get("description", ""),
+                                 "lead_time":   lt}
+            except ValueError:
+                pass
+    if max_lt > 0:
+        return (start + _td(days=max_lt + 10)).isoformat(), aggressor
+    return None, None
+
+
+def get_delivery_forecasts(after: str = "") -> list:
+    """
+    Lista de Pedidos (request_type == 'Pedido') com previsão de entrega calculada,
+    opcionalmente filtrados para depois de `after` (YYYY-MM-DD), ordenados do mais
+    distante para o mais próximo.
+    """
+    quotes      = load_extractions()
+    annotations = load_annotations()
+    timelines   = load_timelines()
+    deals       = load_deals()
+
+    after_date = None
+    if after:
+        try:
+            after_date = datetime.strptime(after, "%Y-%m-%d").date()
+        except ValueError:
+            after_date = None
+
+    result = []
+    for q in quotes:
+        if q.get("request_type") != "Pedido":
+            continue
+        timeline = timelines.get(q["id"], {"dates": {}})
+        deal     = deals.get(q["id"], {})
+        forecast, _ = compute_auto_forecast(q, timeline, deal)
+        if not forecast:
+            continue
+        try:
+            forecast_date = datetime.strptime(forecast[:10], "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if after_date and forecast_date <= after_date:
+            continue
+        ann = annotations.get(q["id"], {})
+        result.append({
+            "id":       q["id"],
+            "subject":  (q.get("subject") or "—")[:55],
+            "forecast": forecast_date.isoformat(),
+            "fornecedor": ann.get("fornecedor") or "—",
+            "status":   ann.get("status", "Em Aberto"),
+        })
+
+    result.sort(key=lambda r: r["forecast"], reverse=True)
+    return result
 
 
 # ── Deals ─────────────────────────────────────────────────────────────────────
@@ -402,52 +500,177 @@ def save_timeline(quote_id: str, subject: str, dates: dict, user: str) -> None:
 
 # ── CCW Bot sync ─────────────────────────────────────────────────────────────
 
-def update_product_leadtimes(quote_id: str, subject: str, lines: list, user: str) -> int:
-    """Match CCW lines to products by part_number and update lead_time. Returns count updated."""
+def process_ccw_sync(quote_id: str, subject: str, order_id: str,
+                     lines: list, user: str) -> dict:
+    """
+    Unified CCW sync. Detects scenario, computes final lead_time, creates products
+    if needed, updates deals.json, and saves a validation report.
+
+    Scenarios:
+      1 — quote has products AND all portal part_numbers found in CCW XLS
+      2 — quote has NO products → creates them from XLS
+      3 — quote has products AND some portal part_numbers NOT in CCW XLS
+
+    Lead_time final = max(lead_time_days) of items in intersection(portal, CCW).
+
+    Returns dict with scenario, max_estimated_delivery, max_lead_time_days,
+    products_created, intersection, only_in_portal, only_in_ccw, contributing_items.
+    """
     if not EXTRACTIONS_F.exists():
-        return 0
-    lt_map = {
-        str(l.get("part_number", "")).upper(): l["lead_time_days"]
-        for l in lines
-        if l.get("part_number") and l.get("lead_time_days") is not None
-    }
-    if not lt_map:
-        return 0
-    entries = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8"))
-    updated = 0
+        return {"scenario": 0, "error": "extractions not found"}
+
+    entries     = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8"))
+    quote_entry = None
     for entry in entries:
         if "id" not in entry:
             entry["id"] = _stable_id(entry)
         if entry["id"] == quote_id:
-            for prod in entry.get("products", []):
-                pn = str(prod.get("part_number", "")).upper()
-                if pn in lt_map:
-                    prod["lead_time"] = str(lt_map[pn])
-                    updated += 1
-            EXTRACTIONS_F.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
-            if updated:
-                _append_audit(quote_id, subject,
-                              {"lead_time_ccw": [None, f"{updated} produto(s) atualizados"]},
-                              user, action="ccw_sync")
-            return updated
-    return 0
+            quote_entry = entry
+            break
 
+    if quote_entry is None:
+        return {"scenario": 0, "error": "quote not found"}
 
-def update_deal_ccw_sync(quote_id: str, subject: str, order_id: str,
-                          max_delivery: str, user: str) -> None:
-    """Stamp last_ccw_sync and max_estimated_delivery into deals.json for a quote."""
+    # ── Deduplica CCW lines por part_number (max lead_time, soma qty) ──────────
+    ccw_map  = {}   # UPPER(pn) → {part_number, lead_time_days, estimated_delivery, qty}
+    qty_sum  = defaultdict(int)
+    for ln in lines:
+        pn = str(ln.get("part_number") or "").strip().upper()
+        if not pn:
+            continue
+        try:
+            qty_sum[pn] += int(float(ln.get("qty") or 0))
+        except (ValueError, TypeError):
+            pass
+        lt = int(ln.get("lead_time_days") or 0)
+        if pn not in ccw_map or lt > ccw_map[pn]["lead_time_days"]:
+            ccw_map[pn] = {
+                "part_number":        pn,
+                "lead_time_days":     lt,
+                "estimated_delivery": ln.get("estimated_delivery", ""),
+            }
+
+    ccw_parts      = set(ccw_map.keys())
+    portal_products = quote_entry.get("products", [])
+    portal_parts   = {
+        str(p.get("part_number") or "").strip().upper()
+        for p in portal_products
+        if p.get("part_number")
+    }
+
+    # ── Detecta cenário e executa ação ─────────────────────────────────────────
+    products_created = 0
+    extractions_dirty = False
+
+    if not portal_products:
+        # Cenário 2: sem produtos — cria a partir do XLS
+        scenario    = 2
+        new_products = []
+        for pn, data in ccw_map.items():
+            new_products.append({
+                "part_number":        pn,
+                "qty":               str(qty_sum[pn]) if qty_sum[pn] else "1",
+                "description":       "",
+                "unit_list_price":   "",
+                "lead_time":         str(data["lead_time_days"]),
+                "discount_pct":      "0",
+                "unit_net_price":    "",
+                "extended_net_price": "",
+                "tipo":              "",
+                "arquitetura":       "",
+                "categoria":         "",
+            })
+        quote_entry["products"] = new_products
+        portal_parts     = ccw_parts
+        products_created = len(new_products)
+        extractions_dirty = True
+        intersection  = ccw_parts.copy()
+        only_in_portal = set()
+        only_in_ccw    = set()
+
+    else:
+        intersection   = portal_parts & ccw_parts
+        only_in_portal = portal_parts - ccw_parts
+        only_in_ccw    = ccw_parts    - portal_parts
+        scenario = 1 if not only_in_portal else 3
+
+    # ── Calcula LeadTime final a partir da intersecção ─────────────────────────
+    contributing = []
+    max_lt_days  = 0
+    max_delivery = None
+
+    for pn in intersection:
+        if pn in ccw_map:
+            item = ccw_map[pn]
+            contributing.append(item)
+            if item["lead_time_days"] > max_lt_days:
+                max_lt_days  = item["lead_time_days"]
+                max_delivery = item["estimated_delivery"]
+
+    contributing.sort(key=lambda x: x["lead_time_days"], reverse=True)
+
+    # ── Grava extractions.json se criou produtos ───────────────────────────────
+    if extractions_dirty:
+        EXTRACTIONS_F.write_text(
+            json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        _append_audit(quote_id, subject,
+                      {"ccw_products_created": [None,
+                          f"cenário 2 — {products_created} produto(s) criados do XLS CCW"]},
+                      user, action="ccw_sync")
+
+    # ── Grava deals.json com max_estimated_delivery calculado ─────────────────
     _ensure()
     deals = load_deals()
     deal  = dict(deals.get(quote_id, {}))
     deal["last_ccw_sync"]          = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    deal["max_estimated_delivery"] = max_delivery
+    deal["max_estimated_delivery"] = max_delivery or ""
     if order_id:
         deal["order_id"] = order_id
     deals[quote_id] = deal
     DEALS_F.write_text(json.dumps(deals, ensure_ascii=False, indent=2), encoding="utf-8")
+
     _append_audit(quote_id, subject,
-                  {"ccw_sync": [None, f"order={order_id} delivery={max_delivery}"]},
+                  {"ccw_sync": [None,
+                      f"cenário={scenario} order={order_id} "
+                      f"intersecção={len(intersection)} "
+                      f"só_portal={len(only_in_portal)} "
+                      f"só_ccw={len(only_in_ccw)} "
+                      f"leadtime_final={max_lt_days}d delivery={max_delivery}"]},
                   user, action="ccw_sync")
+
+    # ── Salva relatório de validação ───────────────────────────────────────────
+    result = {
+        "scenario":              scenario,
+        "max_estimated_delivery": max_delivery,
+        "max_lead_time_days":    max_lt_days,
+        "products_created":      products_created,
+        "intersection":          sorted(intersection),
+        "only_in_portal":        sorted(only_in_portal),
+        "only_in_ccw":           sorted(only_in_ccw),
+        "contributing_items":    contributing,
+    }
+    _save_ccw_validation(quote_id, subject, order_id, result)
+    return result
+
+
+def _save_ccw_validation(quote_id: str, subject: str, order_id: str, result: dict) -> None:
+    existing = {}
+    if CCW_VALIDATIONS_F.exists():
+        try:
+            existing = json.loads(CCW_VALIDATIONS_F.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    existing[quote_id] = {
+        "quote_id":    quote_id,
+        "subject":     subject,
+        "order_id":    order_id,
+        "validated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        **result,
+    }
+    CCW_VALIDATIONS_F.write_text(
+        json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────

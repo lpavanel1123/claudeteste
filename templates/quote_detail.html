@@ -468,7 +468,6 @@
             <th style="width:145px">Arquitetura</th>
             <th style="width:90px">Categoria</th>
             <th style="width:90px">Origem</th>
-            <th class="text-end" style="width:110px">Unit List (R$)</th>
             <th class="text-end" style="width:85px">Lead Time</th>
           </tr>
         </thead>
@@ -502,7 +501,6 @@
               {% elif p.get('tipo') == 'Nacional' %}<span class="badge" style="background:#00a86b">Nacional</span>
               {% else %}<span class="text-muted">—</span>{% endif %}
             </td>
-            <td class="text-end text-muted">{{ p.unit_list_price if p.get('unit_list_price') else '—' }}</td>
             <td class="text-end text-muted">{{ (p.lead_time ~ ' d') if p.get('lead_time') else '—' }}</td>
           </tr>
           {% endfor %}

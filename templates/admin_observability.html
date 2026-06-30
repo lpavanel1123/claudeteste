@@ -160,6 +160,35 @@
   </div>
 </div>
 
+<!-- ── Ordens com Problemas ───────────────────────────────────────────── -->
+<div class="card cisco-card shadow-sm mb-4" id="order-errors-card" style="display:none">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="fa fa-triangle-exclamation text-warning"></i>
+    <span class="fw-semibold">Ordens com Problemas</span>
+    <span class="badge bg-secondary ms-auto" id="order-errors-badge">—</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th class="ps-3">Order ID</th>
+            <th>Status</th>
+            <th class="text-center">Falhas</th>
+            <th>Último Erro</th>
+            <th>Última Tentativa</th>
+          </tr>
+        </thead>
+        <tbody id="order-errors-rows"></tbody>
+      </table>
+    </div>
+    <div class="px-3 py-2 text-muted" style="font-size:.75rem">
+      <i class="fa fa-info-circle me-1"></i>
+      Ordens suspensas são puladas automaticamente pelo bot. Para reativar, remova a entrada de <code>order_errors.json</code> no diretório do bot.
+    </div>
+  </div>
+</div>
+
 <!-- ── Gráficos ────────────────────────────────────────────────────────── -->
 <div class="row g-3 mb-4">
   <div class="col-lg-6">
@@ -554,6 +583,41 @@ function buildCharts(runs) {
   });
 }
 
+function renderOrderErrors(orderErrors) {
+  const card = document.getElementById('order-errors-card');
+  if (!orderErrors || !Object.keys(orderErrors).length) {
+    card.style.display = 'none';
+    return;
+  }
+  const entries = Object.entries(orderErrors).filter(([, v]) => (v.consecutive_failures || 0) > 0);
+  if (!entries.length) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+  const suspCount = entries.filter(([, v]) => v.suspended).length;
+  const badge = document.getElementById('order-errors-badge');
+  badge.textContent = entries.length + ' ordem(s)' + (suspCount ? ` — ${suspCount} suspensa(s)` : '');
+  badge.className   = 'badge ms-auto ' + (suspCount ? 'bg-danger' : 'bg-warning text-dark');
+
+  const rows = entries.map(([oid, info]) => {
+    const isSusp = info.suspended;
+    const n      = info.consecutive_failures || 0;
+    const statusBadge = isSusp
+      ? '<span class="badge bg-danger">SUSPENSA</span>'
+      : `<span class="badge bg-warning text-dark">${n}x falha</span>`;
+    const rowClass = isSusp ? 'table-danger' : 'table-warning';
+    return `<tr class="${rowClass}">
+      <td class="ps-3 fw-semibold"><code>${oid}</code></td>
+      <td>${statusBadge}</td>
+      <td class="text-center fw-bold">${n}</td>
+      <td class="small text-muted">${info.last_error || '—'}</td>
+      <td class="small text-muted">${info.last_attempt ? fmtDate(info.last_attempt) : '—'}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('order-errors-rows').innerHTML = rows;
+}
+
 function renderPerfTests(data) {
   if (!data || !data.tests || !data.tests.length) return;
   document.getElementById('perf-card').style.display = '';
@@ -589,6 +653,8 @@ async function loadStatus() {
     renderKPIs(runs);
     renderOrdersTable(runs);
     buildCharts(runs);
+
+    renderOrderErrors(data.order_errors || {});
 
     // perf tests via bot_metrics.performance_tests (opcional)
     renderPerfTests((data.bot_metrics || {}).performance_tests);

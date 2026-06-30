@@ -159,7 +159,7 @@ No painel do Cloudmailin:
 
 ### Lista de Cotações — funcionalidades
 
-- **Filtros:** Busca livre, Tipo, Status, Etapa da Timeline
+- **Filtros:** Busca livre, Tipo, Status, Etapa da Timeline, Fornecedor
 - **Toggle de colunas:** mostrar/ocultar colunas individualmente (preferência salva no `localStorage`)
 - **Assunto editável inline:** clique no assunto para editar sem sair da lista (salva via fetch)
 - **Etapa Timeline:** barra de progresso + contador `X/Y` + ícone da etapa atual; verde quando concluído
@@ -211,6 +211,7 @@ Previsão = Início de Fabricação + max(Lead Times dos produtos) + 10 dias de 
 - Se não há data manual de previsão → exibe o valor calculado em azul
 - Se há data manual → respeita a manual; mantém a nota informativa
 - Uma nota discreta exibe o produto "agressor" (maior lead time) e o buffer aplicado
+- Essa mesma lógica (`data_store.compute_auto_forecast`) alimenta a tabela **Pedidos com Previsão de Entrega Após** no Dashboard
 
 ---
 
@@ -271,7 +272,10 @@ Três dropdowns filtram os produtos sem recarregar a página:
 
 - **Cotações e Pedidos por Fornecedor** — barras agrupadas
 - **Volume por Etapa do Processo** — barras horizontais por etapa
-- **Top 10 Mais Antigos** — tabela com idade em dias (verde < 30d · amarelo < 60d · vermelho > 60d)
+- **Top 10 Mais Antigos** — tabela com idade em dias **na etapa atual** (dias desde a entrada na etapa, não desde a criação da cotação) (verde < 30d · amarelo < 60d · vermelho > 60d)
+- **Pedidos com Previsão de Entrega Após** — tabela de Pedidos cuja Previsão de Conclusão (manual ou automática) é posterior a uma data filtro (campo de data, padrão 01/10/2026), ordenados do mais distante para o mais próximo. Consulta `GET /api/forecast?after=YYYY-MM-DD`
+
+> **Nota:** valores monetários (`Valor Total`, `Unit List Price`) não são mais exibidos em nenhuma tela do portal (Dashboard, Cotações, Detalhe) — apenas continuam sendo armazenados em `data/annotations.json` e nos produtos, podendo ser editados pelos formulários e reaproveitados via API/exportação.
 
 ---
 

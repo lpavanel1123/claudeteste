@@ -94,6 +94,13 @@ def api_stats():
     return jsonify(data_store.get_stats())
 
 
+@app.route("/api/forecast")
+@login_required
+def api_forecast():
+    after = request.args.get("after", "")
+    return jsonify(data_store.get_delivery_forecasts(after))
+
+
 # ── Quotes ────────────────────────────────────────────────────────────────────
 
 @app.route("/quotes")
@@ -103,17 +110,24 @@ def quotes():
     annotations = data_store.load_annotations()
     timelines   = data_store.load_timelines()
 
-    tipo_f    = request.args.get("tipo", "")
-    status_f  = request.args.get("status", "")
-    tl_step_f = request.args.get("tl_step", "")
-    search    = request.args.get("q", "").lower()
+    tipo_f       = request.args.get("tipo", "")
+    status_f     = request.args.get("status", "")
+    tl_step_f    = request.args.get("tl_step", "")
+    fornecedor_f = request.args.get("fornecedor", "")
+    search       = request.args.get("q", "").lower()
+
+    all_fornecedores = sorted({
+        ann.get("fornecedor", "").strip()
+        for ann in annotations.values() if ann.get("fornecedor", "").strip()
+    })
 
     result = []
     for q in all_quotes:
         ann = annotations.get(q["id"], {})
-        q["_status"] = ann.get("status", "Em Aberto")
-        q["_valor"]  = ann.get("valor_total") or ""
-        q["_resp"]   = ann.get("responsavel_interno", "")
+        q["_status"]      = ann.get("status", "Em Aberto")
+        q["_valor"]       = ann.get("valor_total") or ""
+        q["_resp"]        = ann.get("responsavel_interno", "")
+        q["_fornecedor"]  = ann.get("fornecedor", "")
 
         # Compute current timeline step
         request_type = q.get("request_type", "Cotação")
@@ -143,6 +157,8 @@ def quotes():
             continue
         if tl_step_f and q["_tl_label"] != tl_step_f:
             continue
+        if fornecedor_f and q["_fornecedor"] != fornecedor_f:
+            continue
         if search:
             haystack = " ".join([
                 q.get("subject", ""), q.get("from", ""),
@@ -157,8 +173,8 @@ def quotes():
 
     return render_template(
         "quotes.html", quotes=result,
-        tipo_f=tipo_f, status_f=status_f, tl_step_f=tl_step_f, search=search,
-        statuses=STATUSES, tl_step_labels=all_tl_labels,
+        tipo_f=tipo_f, status_f=status_f, tl_step_f=tl_step_f, fornecedor_f=fornecedor_f, search=search,
+        statuses=STATUSES, tl_step_labels=all_tl_labels, fornecedores=all_fornecedores,
     )
 
 
@@ -176,36 +192,7 @@ def quote_detail(quote_id):
     tl_steps = data_store.TIMELINE_STEPS.get(request_type, data_store.TIMELINE_STEPS["Cotação"])
 
     # ── Cálculo automático de previsão de conclusão ──
-    from datetime import date as _date, timedelta as _td
-    auto_forecast = None
-    aggressor     = None
-    # Se o bot CCW sincronizou, usa max_estimated_delivery diretamente
-    ccw_delivery = deal.get("max_estimated_delivery", "") if deal else ""
-    if ccw_delivery:
-        auto_forecast = ccw_delivery
-        aggressor     = {"source": "CCW", "last_sync": deal.get("last_ccw_sync", "")}
-    else:
-        inicio_str = timeline.get("dates", {}).get("inicio_fabricacao", "")
-        if inicio_str:
-            try:
-                start  = _date.fromisoformat(inicio_str)
-                max_lt = 0
-                for p in quote.get("products", []):
-                    lt_raw = str(p.get("lead_time") or "").strip()
-                    if lt_raw and lt_raw.upper() != "N/A":
-                        try:
-                            lt = int(float(lt_raw))
-                            if lt > max_lt:
-                                max_lt = lt
-                                aggressor = {"part_number": p.get("part_number", ""),
-                                             "description": p.get("description", ""),
-                                             "lead_time":   lt}
-                        except ValueError:
-                            pass
-                if max_lt > 0:
-                    auto_forecast = (start + _td(days=max_lt + 10)).isoformat()
-            except ValueError:
-                pass
+    auto_forecast, aggressor = data_store.compute_auto_forecast(quote, timeline, deal)
 
     return render_template("quote_detail.html", quote=quote, ann=ann, corr=corr,
                            statuses=STATUSES, correctable=data_store.CORRECTABLE_FIELDS,
@@ -815,24 +802,23 @@ def api_orders():
 @app.route("/api/v1/leadtime", methods=["POST"])
 @_api_key_required
 def api_leadtime():
-    """Receives CCW lead-time data from bot and updates products + deals."""
+    """Receives CCW XLS data from bot, detects scenario, computes lead_time, updates portal."""
     payload = request.get_json(silent=True)
     if not payload:
         return jsonify({"error": "invalid JSON"}), 400
 
-    quote_id     = payload.get("quote_id", "")
-    order_id     = payload.get("order_id", "")
-    max_delivery = payload.get("max_estimated_delivery", "")
-    lines        = payload.get("lines", [])
+    quote_id = payload.get("quote_id", "")
+    order_id = payload.get("order_id", "")
+    lines    = payload.get("lines", [])
 
     quote = next((q for q in data_store.load_extractions() if q["id"] == quote_id), None)
     if not quote:
         return jsonify({"error": "quote not found"}), 404
 
-    data_store.update_deal_ccw_sync(
-        quote_id, quote.get("subject", ""), order_id, max_delivery, "bot_ccw"
+    result = data_store.process_ccw_sync(
+        quote_id, quote.get("subject", ""), order_id, lines, "bot_ccw"
     )
-    return jsonify({"ok": True, "max_estimated_delivery": max_delivery})
+    return jsonify({"ok": True, **result})
 
 
 # ── Observabilidade ───────────────────────────────────────────────────────────
@@ -863,10 +849,11 @@ def admin_observability():
     return render_template("admin_observability.html")
 
 
-_BOT_DIR        = Path(__file__).parent.parent / "bot_to_ccw"
-_BOT_ENV        = _BOT_DIR / ".env"
-_BOT_TOKEN_INFO = _BOT_DIR / "token_info.json"
-_INBOX_FILE     = Path(__file__).parent / config.INBOX_FILE
+_BOT_DIR          = Path(__file__).parent.parent / "bot_to_ccw"
+_BOT_ENV          = _BOT_DIR / ".env"
+_BOT_TOKEN_INFO   = _BOT_DIR / "token_info.json"
+_BOT_ORDER_ERRORS = _BOT_DIR / "order_errors.json"
+_INBOX_FILE       = Path(__file__).parent / config.INBOX_FILE
 
 
 def _read_bot_env_value(key: str) -> str:
@@ -966,12 +953,21 @@ def api_status():
         except Exception:
             pass
 
+    # Order errors / suspended orders
+    order_errors = {}
+    if _BOT_ORDER_ERRORS.exists():
+        try:
+            order_errors = json.loads(_BOT_ORDER_ERRORS.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
     return jsonify({
-        "services":    services,
-        "token_info":  token_info,
-        "email_count": email_count,
-        "bot_metrics": bot_metrics,
-        "timestamp":   datetime.now().isoformat(),
+        "services":     services,
+        "token_info":   token_info,
+        "email_count":  email_count,
+        "bot_metrics":  bot_metrics,
+        "order_errors": order_errors,
+        "timestamp":    datetime.now().isoformat(),
     })
 
 

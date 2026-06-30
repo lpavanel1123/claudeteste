@@ -42,6 +42,15 @@
           {% endfor %}
         </select>
       </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small fw-semibold mb-1">Fornecedor</label>
+        <select name="fornecedor" class="form-select form-select-sm">
+          <option value="">Todos</option>
+          {% for f in fornecedores %}
+            <option {% if fornecedor_f == f %}selected{% endif %}>{{ f }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <div class="col-6 col-md-3 d-flex gap-2 align-items-end">
         <button type="submit" class="btn btn-primary btn-sm">
           <i class="fa fa-search me-1"></i>Filtrar
@@ -76,9 +85,6 @@
               <input type="checkbox" class="col-toggle" data-col="6" checked> Etapa Timeline
             </label></li>
             <li><label class="dropdown-item px-1 py-1 d-flex align-items-center gap-2">
-              <input type="checkbox" class="col-toggle" data-col="7" checked> Valor (R$)
-            </label></li>
-            <li><label class="dropdown-item px-1 py-1 d-flex align-items-center gap-2">
               <input type="checkbox" class="col-toggle" data-col="8" checked> Responsável
             </label></li>
           </ul>
@@ -101,14 +107,13 @@
           <th data-col="4">Departamento</th>
           <th data-col="5">Status</th>
           <th data-col="6" style="min-width:170px">Etapa Timeline</th>
-          <th data-col="7">Valor (R$)</th>
           <th data-col="8">Responsável</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
         {% if not quotes %}
-          <tr><td colspan="10" class="text-center text-muted py-4">Nenhuma cotação encontrada.</td></tr>
+          <tr><td colspan="9" class="text-center text-muted py-4">Nenhuma cotação encontrada.</td></tr>
         {% endif %}
         {% for q in quotes %}
         <tr onclick="location.href='/quotes/{{ q.id }}'" style="cursor:pointer" class="quote-row">
@@ -162,7 +167,6 @@
             {% endif %}
           </td>
 
-          <td class="small" data-col="7">{% if q._valor %}{{ "R$ {:,.2f}".format(q._valor) }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
           <td class="small text-muted" data-col="8">{{ q._resp or '—' }}</td>
           <td><a href="/quotes/{{ q.id }}" class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation()"><i class="fa fa-eye"></i></a></td>
         </tr>

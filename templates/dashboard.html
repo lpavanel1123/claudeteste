@@ -14,7 +14,7 @@
 
 <!-- KPI Cards -->
 <div class="row g-3 mb-4">
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md-4">
     <div class="card kpi-card kpi-primary bg-white">
       <div class="card-body py-3 px-3">
         <div class="d-flex justify-content-between align-items-start">
@@ -30,23 +30,7 @@
       </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
-    <div class="card kpi-card kpi-success bg-white">
-      <div class="card-body py-3 px-3">
-        <div class="d-flex justify-content-between align-items-start">
-          <div>
-            <div class="text-muted small mb-1" style="font-size:.75rem">VALOR TOTAL (R$)</div>
-            <div class="fw-bold text-cisco" style="font-size:1.25rem" id="kpi-valor">{{ "R$ {:,.0f}".format(stats.valor_total) }}</div>
-            <div class="small text-muted mt-1">com valor cadastrado</div>
-          </div>
-          <div class="rounded-2 p-2" style="background:rgba(108,192,74,.1)">
-            <i class="fa-solid fa-sack-dollar kpi-icon" style="color:#6cc04a"></i>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md-4">
     <div class="card kpi-card kpi-warning bg-white">
       <div class="card-body py-3 px-3">
         <div class="d-flex justify-content-between align-items-start">
@@ -62,7 +46,7 @@
       </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md-4">
     <div class="card kpi-card kpi-secondary bg-white">
       <div class="card-body py-3 px-3">
         <div class="d-flex justify-content-between align-items-start">
@@ -149,6 +133,29 @@
       </div>
     </div>
   </div>
+  <div class="col-12">
+    <div class="card shadow-sm cisco-card">
+      <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span><i class="fa fa-truck me-2" style="color:var(--cisco-warn)"></i>Pedidos com Previsão de Entrega Após</span>
+        <div class="d-flex align-items-center gap-2">
+          <input type="date" id="forecast-after" class="form-control form-control-sm" style="width:160px" value="2026-10-01">
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table align-middle mb-0 small" id="tbl-forecast">
+          <thead class="table-light">
+            <tr>
+              <th>Assunto</th>
+              <th>Fornecedor</th>
+              <th>Status</th>
+              <th>Previsão de Entrega</th>
+            </tr>
+          </thead>
+          <tbody id="forecast-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -156,10 +163,6 @@
 <script>
 const CISCO  = ['#005073','#049FD9','#00BCEB','#6cc04a','#ffbe00','#e2231a','#7B61FF','#FF6B35'];
 const charts = {};
-
-function fmtBRL(v) {
-  return 'R$ ' + Number(v).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0});
-}
 
 function buildAll(s) {
   const opts = { responsive:true, maintainAspectRatio:false,
@@ -245,12 +248,37 @@ function buildAll(s) {
 
 function updateKPIs(s) {
   document.getElementById('kpi-total').textContent    = s.total;
-  document.getElementById('kpi-valor').textContent    = fmtBRL(s.valor_total);
   document.getElementById('kpi-abertas').textContent  = s.abertas;
   document.getElementById('kpi-fechadas').textContent = s.fechadas;
   document.getElementById('last-update').innerHTML =
     '<i class="fa fa-circle text-cisco-bright fa-xs me-1"></i>Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
 }
+
+// ── Previsão de entrega ────────────────────────────────────────────────────
+const STATUS_COLOR_FC = {'Em Aberto':'#ffbe00','Em Análise':'#049FD9','Aprovada':'#6cc04a','Ganha':'#005073','Perdida':'#e2231a','Rejeitada':'#aaa'};
+
+function renderForecast(rows) {
+  const tbody = document.getElementById('forecast-body');
+  if (!tbody) return;
+  tbody.innerHTML = (rows || []).map(r => `
+    <tr style="cursor:pointer" onclick="location.href='/quotes/${r.id}'">
+      <td class="fw-semibold">${r.subject}</td>
+      <td class="text-muted">${r.fornecedor}</td>
+      <td><span class="badge" style="background:${STATUS_COLOR_FC[r.status]||'#aaa'}22;color:${STATUS_COLOR_FC[r.status]||'#aaa'}">${r.status}</span></td>
+      <td class="text-muted">${r.forecast.split('-').reverse().join('/')}</td>
+    </tr>`).join('') || '<tr><td colspan="4" class="text-center text-muted py-3">Nenhum pedido encontrado</td></tr>';
+}
+
+async function loadForecast() {
+  const after = document.getElementById('forecast-after').value;
+  try {
+    const rows = await (await fetch('/api/forecast?after=' + encodeURIComponent(after))).json();
+    renderForecast(rows);
+  } catch(_) {}
+}
+
+document.getElementById('forecast-after').addEventListener('change', loadForecast);
+loadForecast();
 
 const init = {{ stats | tojson }};
 buildAll(init); updateKPIs(init);
