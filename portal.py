@@ -91,6 +91,24 @@ def logout():
     return redirect(url_for("login"))
 
 
+@app.route("/profile/password", methods=["POST"])
+@login_required
+def profile_password():
+    current  = request.form.get("current_password", "")
+    new_pwd  = request.form.get("new_password", "")
+    confirm  = request.form.get("confirm_password", "")
+    if not current or not new_pwd:
+        return jsonify({"ok": False, "error": "Preencha todos os campos."}), 400
+    if new_pwd != confirm:
+        return jsonify({"ok": False, "error": "As senhas não coincidem."}), 400
+    if len(new_pwd) < 6:
+        return jsonify({"ok": False, "error": "Senha deve ter no mínimo 6 caracteres."}), 400
+    ok, err = data_store.change_password(session["user"], current, new_pwd)
+    if not ok:
+        return jsonify({"ok": False, "error": err}), 400
+    return jsonify({"ok": True})
+
+
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -196,7 +214,7 @@ def quotes_delete():
     ids = request.json.get("ids", [])
     if not ids:
         return jsonify({"ok": False, "error": "Nenhuma selecionada"}), 400
-    count = data_store.delete_quotes(ids)
+    count = data_store.delete_quotes(ids, session["user"])
     return jsonify({"ok": True, "deleted": count})
 
 

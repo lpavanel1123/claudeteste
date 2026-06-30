@@ -83,11 +83,17 @@ def find_quote_by_deal_field(key: str, value: str):
         return row["quote_id"] if row else None
 
 
-def delete_quotes(ids: list) -> int:
+def delete_quotes(ids: list, user: str) -> int:
     """Delete extractions by id list. CASCADE removes all related rows."""
+    with db.get_cursor() as cur:
+        cur.execute("SELECT id, subject FROM extractions WHERE id = ANY(%s)", (ids,))
+        rows = cur.fetchall()
     with db.get_cursor(commit=True) as cur:
         cur.execute("DELETE FROM extractions WHERE id = ANY(%s)", (ids,))
-        return cur.rowcount
+        deleted = cur.rowcount
+    for r in rows:
+        _append_audit(r["id"], r["subject"] or "", {"_excluido": [r["id"], None]}, user, action="delete")
+    return deleted
 
 
 def get_extraction_by_id(quote_id: str):
@@ -803,6 +809,19 @@ def create_user(username: str, password: str, role: str = "viewer",
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             ),
         )
+
+
+def change_password(username: str, current_password: str, new_password: str) -> tuple[bool, str]:
+    """Verify current password then update to new hash. Returns (ok, error_msg)."""
+    user = verify_user(username, current_password)
+    if not user:
+        return False, "Senha atual incorreta."
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            "UPDATE users SET password_hash = %s WHERE username = %s",
+            (generate_password_hash(new_password, method="pbkdf2:sha256"), username),
+        )
+    return True, ""
 
 
 def ensure_default_user() -> None:

@@ -36,33 +36,56 @@
         <tr>
           <th>Data/Hora</th>
           <th>Usuário</th>
+          <th>Ação</th>
           <th>Cotação</th>
-          <th>Campos Alterados</th>
+          <th>Detalhes</th>
         </tr>
       </thead>
       <tbody>
         {% if not logs %}
-          <tr><td colspan="4" class="text-center text-muted py-4">Nenhum registro encontrado.</td></tr>
+          <tr><td colspan="5" class="text-center text-muted py-4">Nenhum registro encontrado.</td></tr>
         {% endif %}
         {% for lg in logs %}
-        <tr>
+        {% set is_delete = lg.get('action') == 'delete' %}
+        <tr {% if is_delete %}class="table-danger"{% endif %}>
           <td class="text-nowrap small text-muted">{{ lg.timestamp }}</td>
           <td><span class="badge bg-primary">{{ lg.user }}</span></td>
           <td>
-            <a href="/quotes/{{ lg.quote_id }}" class="text-decoration-none fw-semibold small">
-              {{ lg.subject | truncate(50) }}
-            </a>
+            {% if is_delete %}
+              <span class="badge bg-danger"><i class="fa fa-trash me-1"></i>excluído</span>
+            {% elif lg.get('action') == 'bulk_import_create' %}
+              <span class="badge bg-info text-dark">importado</span>
+            {% elif lg.get('action') == 'products_edit' %}
+              <span class="badge bg-warning text-dark">produtos</span>
+            {% elif lg.get('action') == 'products_append' %}
+              <span class="badge bg-warning text-dark">produtos+</span>
+            {% else %}
+              <span class="badge bg-secondary">edição</span>
+            {% endif %}
           </td>
           <td>
-            <div class="d-flex flex-wrap gap-1">
-              {% for field, vals in lg.changes.items() %}
-                <span class="badge bg-light text-dark border small">
-                  <b>{{ field }}</b>:
-                  <span class="text-danger">{{ vals[0] if vals[0] is not none else '—' }}</span>
-                  → <span class="text-success">{{ vals[1] if vals[1] is not none else '—' }}</span>
-                </span>
-              {% endfor %}
-            </div>
+            {% if is_delete %}
+              <span class="fw-semibold small text-muted text-decoration-line-through">{{ lg.subject | truncate(50) }}</span>
+            {% else %}
+              <a href="/quotes/{{ lg.quote_id }}" class="text-decoration-none fw-semibold small">
+                {{ lg.subject | truncate(50) }}
+              </a>
+            {% endif %}
+          </td>
+          <td>
+            {% if is_delete %}
+              <span class="small text-muted">ID: {{ lg.quote_id }}</span>
+            {% else %}
+              <div class="d-flex flex-wrap gap-1">
+                {% for field, vals in lg.changes.items() %}
+                  <span class="badge bg-light text-dark border small">
+                    <b>{{ field }}</b>:
+                    <span class="text-danger">{{ vals[0] if vals[0] is not none else '—' }}</span>
+                    → <span class="text-success">{{ vals[1] if vals[1] is not none else '—' }}</span>
+                  </span>
+                {% endfor %}
+              </div>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
