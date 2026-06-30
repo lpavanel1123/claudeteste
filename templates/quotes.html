@@ -94,12 +94,25 @@
   </div>
 </div>
 
+<!-- Barra de exclusão (owner only) -->
+{% if is_owner %}
+<div id="delete-bar" class="alert alert-danger d-none d-flex align-items-center gap-3 mb-3 py-2 px-3 shadow-sm" style="border-radius:10px">
+  <i class="fa fa-trash me-1"></i>
+  <span id="delete-count" class="fw-semibold"></span> selecionada(s)
+  <button class="btn btn-danger btn-sm ms-auto" id="btn-confirm-delete">
+    <i class="fa fa-trash me-1"></i>Excluir selecionadas
+  </button>
+  <button class="btn btn-outline-secondary btn-sm" id="btn-cancel-select">Cancelar</button>
+</div>
+{% endif %}
+
 <!-- Tabela -->
 <div class="card shadow-sm" style="border-radius:12px;border:none">
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0" id="quotes-table">
       <thead class="table-light">
         <tr>
+          {% if is_owner %}<th style="width:36px"><input type="checkbox" id="chk-all" class="form-check-input"></th>{% endif %}
           <th data-col="0">Data</th>
           <th data-col="1">Requisitante</th>
           <th data-col="2">Assunto</th>
@@ -113,10 +126,15 @@
       </thead>
       <tbody>
         {% if not quotes %}
-          <tr><td colspan="9" class="text-center text-muted py-4">Nenhuma cotação encontrada.</td></tr>
+          <tr><td colspan="{{ 10 if is_owner else 9 }}" class="text-center text-muted py-4">Nenhuma cotação encontrada.</td></tr>
         {% endif %}
         {% for q in quotes %}
-        <tr onclick="location.href='/quotes/{{ q.id }}'" style="cursor:pointer" class="quote-row">
+        <tr onclick="location.href='/quotes/{{ q.id }}'" style="cursor:pointer" class="quote-row" data-id="{{ q.id }}">
+          {% if is_owner %}
+          <td onclick="event.stopPropagation()">
+            <input type="checkbox" class="form-check-input row-chk" value="{{ q.id }}">
+          </td>
+          {% endif %}
           <td class="text-nowrap small text-muted" data-col="0">{{ q.date[:10] }}</td>
           <td class="small" data-col="1">{{ (q.get('requester_name') or q.get('from') or '—') | truncate(30) }}</td>
           <td data-col="2">
@@ -203,6 +221,63 @@ function persistCols() {
   document.querySelectorAll('.col-toggle').forEach(cb => { state[cb.dataset.col] = cb.checked; });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
+
+// ── Seleção e exclusão em massa (owner only) ──────────────────────────────────
+{% if is_owner %}
+const deleteBar   = document.getElementById('delete-bar');
+const deleteCount = document.getElementById('delete-count');
+const chkAll      = document.getElementById('chk-all');
+
+function updateDeleteBar() {
+  const checked = document.querySelectorAll('.row-chk:checked');
+  if (checked.length > 0) {
+    deleteBar.classList.remove('d-none');
+    deleteCount.textContent = checked.length;
+  } else {
+    deleteBar.classList.add('d-none');
+  }
+  chkAll.indeterminate = checked.length > 0 && checked.length < document.querySelectorAll('.row-chk').length;
+  chkAll.checked = checked.length > 0 && checked.length === document.querySelectorAll('.row-chk').length;
+}
+
+chkAll.addEventListener('change', () => {
+  document.querySelectorAll('.row-chk').forEach(c => { c.checked = chkAll.checked; });
+  updateDeleteBar();
+});
+
+document.querySelectorAll('.row-chk').forEach(c => c.addEventListener('change', updateDeleteBar));
+
+document.getElementById('btn-cancel-select').addEventListener('click', () => {
+  document.querySelectorAll('.row-chk').forEach(c => { c.checked = false; });
+  chkAll.checked = false;
+  deleteBar.classList.add('d-none');
+});
+
+document.getElementById('btn-confirm-delete').addEventListener('click', async () => {
+  const ids = [...document.querySelectorAll('.row-chk:checked')].map(c => c.value);
+  if (!ids.length) return;
+  if (!confirm(`Excluir ${ids.length} cotação(ões) permanentemente? Esta ação não pode ser desfeita.`)) return;
+  try {
+    const r = await fetch('/quotes/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ids})
+    });
+    const j = await r.json();
+    if (j.ok) {
+      ids.forEach(id => {
+        const row = document.querySelector(`.quote-row[data-id="${id}"]`);
+        if (row) row.remove();
+      });
+      deleteBar.classList.add('d-none');
+      document.getElementById('result-count').textContent =
+        document.querySelectorAll('.quote-row').length + ' resultado(s)';
+    } else {
+      alert('Erro: ' + (j.error || 'falha ao excluir'));
+    }
+  } catch (e) { alert('Erro de rede.'); }
+});
+{% endif %}
 
 // ── Edição inline do Assunto ──────────────────────────────────────────────────
 document.querySelectorAll('.editable-subject').forEach(span => {

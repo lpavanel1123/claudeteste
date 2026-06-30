@@ -48,7 +48,7 @@
           <i class="fa-solid fa-clock-rotate-left fa-fw"></i> Histórico
         </a>
       </li>
-      {% if session.get('role') == 'admin' %}
+      {% if session.get('role') in ('admin', 'owner') %}
       <li class="nav-item">
         <a class="nav-link admin-toggle {% if request.path.startswith('/admin') %}active{% endif %}"
            data-bs-toggle="collapse" href="#adminSubmenu" role="button"

@@ -50,7 +50,9 @@
               <td class="small text-muted">{{ u.celular or '—' }}</td>
               <td class="small">{{ u.empresa or '—' }}</td>
               <td>
-                {% if u.role == 'admin' %}
+                {% if u.role == 'owner' %}
+                  <span class="badge" style="background:#6f42c1;color:#fff">owner</span>
+                {% elif u.role == 'admin' %}
                   <span class="badge" style="background:var(--cisco-bright);color:#fff">admin</span>
                 {% else %}
                   <span class="badge bg-secondary">viewer</span>
@@ -118,9 +120,10 @@
             <select name="role" class="form-select form-select-sm">
               <option value="viewer">Viewer</option>
               <option value="admin">Admin</option>
+              <option value="owner">Owner</option>
             </select>
             <div class="form-text small text-muted mt-1">
-              <i class="fa fa-info-circle me-1"></i>Admin tem acesso a esta tela.
+              <i class="fa fa-info-circle me-1"></i>Admin/Owner têm acesso a esta tela. Owner pode excluir cotações.
             </div>
           </div>
           <button type="submit" class="btn btn-cisco w-100" id="btn-criar">

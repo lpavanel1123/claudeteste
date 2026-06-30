@@ -49,9 +49,20 @@ def admin_required(f):
     def decorated(*args, **kwargs):
         if "user" not in session:
             return redirect(url_for("login"))
-        if session.get("role") != "admin":
+        if session.get("role") not in ("admin", "owner"):
             flash("Acesso restrito a administradores.", "danger")
             return redirect(url_for("dashboard"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def owner_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user" not in session:
+            return redirect(url_for("login"))
+        if session.get("role") != "owner":
+            return jsonify({"ok": False, "error": "Acesso restrito ao Owner."}), 403
         return f(*args, **kwargs)
     return decorated
 
@@ -175,7 +186,18 @@ def quotes():
         "quotes.html", quotes=result,
         tipo_f=tipo_f, status_f=status_f, tl_step_f=tl_step_f, fornecedor_f=fornecedor_f, search=search,
         statuses=STATUSES, tl_step_labels=all_tl_labels, fornecedores=all_fornecedores,
+        is_owner=(session.get("role") == "owner"),
     )
+
+
+@app.route("/quotes/delete", methods=["POST"])
+@owner_required
+def quotes_delete():
+    ids = request.json.get("ids", [])
+    if not ids:
+        return jsonify({"ok": False, "error": "Nenhuma selecionada"}), 400
+    count = data_store.delete_quotes(ids)
+    return jsonify({"ok": True, "deleted": count})
 
 
 @app.route("/quotes/<quote_id>")

@@ -83,6 +83,13 @@ def find_quote_by_deal_field(key: str, value: str):
         return row["quote_id"] if row else None
 
 
+def delete_quotes(ids: list) -> int:
+    """Delete extractions by id list. CASCADE removes all related rows."""
+    with db.get_cursor(commit=True) as cur:
+        cur.execute("DELETE FROM extractions WHERE id = ANY(%s)", (ids,))
+        return cur.rowcount
+
+
 def get_extraction_by_id(quote_id: str):
     with db.get_cursor() as cur:
         cur.execute("SELECT * FROM extractions WHERE id = %s", (quote_id,))
