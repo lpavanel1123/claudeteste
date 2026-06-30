@@ -54,12 +54,23 @@ def _stable_id(q: dict) -> str:
     return hashlib.sha1(key.encode()).hexdigest()[:12]
 
 
+def _str_dates(row: dict) -> dict:
+    """Convert datetime/date objects to ISO strings so templates can slice them."""
+    from datetime import datetime as _dt, date as _d
+    for k, v in row.items():
+        if isinstance(v, _dt):
+            row[k] = str(v)[:19]
+        elif isinstance(v, _d):
+            row[k] = str(v)[:10]
+    return row
+
+
 # ── Extractions ───────────────────────────────────────────────────────────────
 
 def load_extractions() -> list:
     with db.get_cursor() as cur:
         cur.execute("SELECT * FROM extractions ORDER BY date DESC")
-        return [dict(r) for r in cur.fetchall()]
+        return [_str_dates(dict(r)) for r in cur.fetchall()]
 
 
 def find_quote_by_deal_field(key: str, value: str):
@@ -76,7 +87,7 @@ def get_extraction_by_id(quote_id: str):
     with db.get_cursor() as cur:
         cur.execute("SELECT * FROM extractions WHERE id = %s", (quote_id,))
         row = cur.fetchone()
-        return dict(row) if row else None
+        return _str_dates(dict(row)) if row else None
 
 
 def update_extraction_fields(quote_id: str, updates: dict, subject: str, user: str) -> bool:
@@ -185,7 +196,7 @@ def _insert_extraction(q: dict) -> None:
 def load_annotations() -> dict:
     with db.get_cursor() as cur:
         cur.execute("SELECT * FROM annotations")
-        return {r["quote_id"]: dict(r) for r in cur.fetchall()}
+        return {r["quote_id"]: _str_dates(dict(r)) for r in cur.fetchall()}
 
 
 def save_annotation(quote_id: str, subject: str, new_data: dict, user: str) -> None:
@@ -508,13 +519,7 @@ def load_deals() -> dict:
         cur.execute("SELECT * FROM deals")
         result = {}
         for r in cur.fetchall():
-            row = dict(r)
-            # Normalise datetime/date objects to string (matching legacy JSON format)
-            for k in ("last_ccw_sync", "updated_at"):
-                if row.get(k) is not None:
-                    row[k] = str(row[k])[:19]
-            if row.get("max_estimated_delivery") is not None:
-                row["max_estimated_delivery"] = str(row["max_estimated_delivery"])[:10]
+            row = _str_dates(dict(r))
             qid = row.pop("quote_id")
             result[qid] = row
         return result
@@ -753,7 +758,7 @@ def _save_ccw_validation(quote_id: str, subject: str, order_id: str, result: dic
 def load_users() -> list:
     with db.get_cursor() as cur:
         cur.execute("SELECT * FROM users ORDER BY created_at")
-        return [dict(r) for r in cur.fetchall()]
+        return [_str_dates(dict(r)) for r in cur.fetchall()]
 
 
 def verify_user(username: str, password: str):
