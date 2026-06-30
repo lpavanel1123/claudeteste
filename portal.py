@@ -240,10 +240,7 @@ def quote_new():
             "body":                 request.form.get("body", "").strip(),
         }
 
-        path = Path("extractions.json")
-        entries = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
-        entries.append(quote)
-        path.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+        data_store._insert_extraction(quote)
 
         raw_valor = request.form.get("valor_total", "").replace(",", ".").replace("R$", "").strip()
         ann_data  = {
