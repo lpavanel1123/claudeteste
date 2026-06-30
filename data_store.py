@@ -1,25 +1,18 @@
-import json
 import hashlib
-from pathlib import Path
 from datetime import datetime, timedelta
 from collections import defaultdict
-from werkzeug.security import generate_password_hash, check_password_hash
 
-DATA_DIR        = Path("data")
-EXTRACTIONS_F   = Path("extractions.json")
-ANNOTATIONS_F   = DATA_DIR / "annotations.json"
-CORRECTIONS_F   = DATA_DIR / "corrections.json"
-AUDIT_LOG_F     = DATA_DIR / "audit_log.json"
-USERS_F         = DATA_DIR / "users.json"
+from werkzeug.security import generate_password_hash, check_password_hash
+from psycopg2.extras import Json
+
+import db
+
+# ── Constants (unchanged) ──────────────────────────────────────────────────────
 
 CORRECTABLE_FIELDS = [
     "requester_name", "department", "request_type", "project_type",
     "cnpj", "smart_account", "smart_account_domain", "virtual_account", "project_ref",
 ]
-
-TIMELINES_F       = DATA_DIR / "timelines.json"
-DEALS_F           = DATA_DIR / "deals.json"
-CCW_VALIDATIONS_F = DATA_DIR / "ccw_validations.json"
 
 DEAL_FIELDS = [
     {"key": "projeto_id_vale",       "label": "Projeto ID (Vale)"},
@@ -48,12 +41,15 @@ TIMELINE_STEPS = {
     ],
 }
 
-
-def _ensure() -> None:
-    DATA_DIR.mkdir(exist_ok=True)
+_UPDATABLE_EXTRACTION_COLS = {
+    "subject", "request_type", "project_type", "requester_name", "department",
+    "recipient", "cnpj", "smart_account", "smart_account_domain", "virtual_account",
+    "project_ref", "is_manual", "is_bulk_import",
+}
 
 
 def _stable_id(q: dict) -> str:
+    """Fallback ID derivation for legacy records without an explicit id field."""
     key = f"{q.get('date','')}{q.get('from','')}{q.get('subject','')}"
     return hashlib.sha1(key.encode()).hexdigest()[:12]
 
@@ -61,146 +57,197 @@ def _stable_id(q: dict) -> str:
 # ── Extractions ───────────────────────────────────────────────────────────────
 
 def load_extractions() -> list:
-    if not EXTRACTIONS_F.exists():
-        return []
-    quotes = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8"))
-    for q in quotes:
-        if "id" not in q:
-            q["id"] = _stable_id(q)
-    return list(reversed(quotes))  # newest first
+    with db.get_cursor() as cur:
+        cur.execute("SELECT * FROM extractions ORDER BY date DESC")
+        return [dict(r) for r in cur.fetchall()]
 
 
 def find_quote_by_deal_field(key: str, value: str):
-    """Returns quote_id if any deal entry has deals[id][key] == value, else None."""
-    if not value:
+    """Returns quote_id if any deal entry has deals[key] == value, else None."""
+    if not value or key not in {f["key"] for f in DEAL_FIELDS}:
         return None
-    for quote_id, deal in load_deals().items():
-        if (deal.get(key) or "").strip() == value.strip():
-            return quote_id
-    return None
+    with db.get_cursor() as cur:
+        cur.execute(f"SELECT quote_id FROM deals WHERE {key} = %s LIMIT 1", (value.strip(),))
+        row = cur.fetchone()
+        return row["quote_id"] if row else None
 
 
 def get_extraction_by_id(quote_id: str):
-    if not EXTRACTIONS_F.exists():
-        return None
-    entries = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8"))
-    for q in entries:
-        if "id" not in q:
-            q["id"] = _stable_id(q)
-        if q["id"] == quote_id:
-            return q
-    return None
+    with db.get_cursor() as cur:
+        cur.execute("SELECT * FROM extractions WHERE id = %s", (quote_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
 
 
 def update_extraction_fields(quote_id: str, updates: dict, subject: str, user: str) -> bool:
-    if not EXTRACTIONS_F.exists():
+    safe = {k: v for k, v in updates.items() if k in _UPDATABLE_EXTRACTION_COLS}
+    if not safe:
         return False
-    entries = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8"))
-    for entry in entries:
-        if "id" not in entry:
-            entry["id"] = _stable_id(entry)
-        if entry["id"] == quote_id:
-            changes = {k: [entry.get(k), v] for k, v in updates.items() if entry.get(k) != v}
-            entry.update(updates)
-            EXTRACTIONS_F.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
-            if changes:
-                _append_audit(quote_id, subject, changes, user, action="bulk_import_update")
-            return True
-    return False
+    old = get_extraction_by_id(quote_id)
+    if old is None:
+        return False
+    changes = {k: [old.get(k), v] for k, v in safe.items() if old.get(k) != v}
+    cols = sorted(safe.keys())
+    set_clause = ", ".join(f'"{c}" = %s' for c in cols)
+    params = [safe[c] for c in cols] + [quote_id]
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(f"UPDATE extractions SET {set_clause} WHERE id = %s", params)
+    if changes:
+        _append_audit(quote_id, subject, changes, user, action="bulk_import_update")
+    return True
 
 
 def save_products(quote_id: str, subject: str, products: list, user: str) -> None:
-    if not EXTRACTIONS_F.exists():
+    with db.get_cursor() as cur:
+        cur.execute("SELECT jsonb_array_length(products) AS cnt FROM extractions WHERE id = %s", (quote_id,))
+        row = cur.fetchone()
+    if row is None:
         return
-    entries = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8"))
-    for entry in entries:
-        if "id" not in entry:
-            entry["id"] = _stable_id(entry)
-        if entry["id"] == quote_id:
-            old_count = len(entry.get("products", []))
-            entry["products"] = products
-            EXTRACTIONS_F.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
-            _append_audit(quote_id, subject,
-                          {"produtos": [f"{old_count} itens", f"{len(products)} itens"]},
-                          user, action="products_edit")
-            return
+    old_count = row["cnt"] or 0
+    with db.get_cursor(commit=True) as cur:
+        cur.execute("UPDATE extractions SET products = %s WHERE id = %s",
+                    (Json(products), quote_id))
+    _append_audit(quote_id, subject,
+                  {"produtos": [f"{old_count} itens", f"{len(products)} itens"]},
+                  user, action="products_edit")
 
 
 def append_products(quote_id: str, subject: str, new_products: list, user: str) -> None:
-    if not EXTRACTIONS_F.exists():
+    with db.get_cursor() as cur:
+        cur.execute("SELECT jsonb_array_length(products) AS cnt FROM extractions WHERE id = %s", (quote_id,))
+        row = cur.fetchone()
+    if row is None:
         return
-    entries = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8"))
-    for entry in entries:
-        if "id" not in entry:
-            entry["id"] = _stable_id(entry)
-        if entry["id"] == quote_id:
-            existing = entry.get("products", [])
-            entry["products"] = existing + new_products
-            EXTRACTIONS_F.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
-            _append_audit(quote_id, subject,
-                          {"produtos": [f"{len(existing)} itens", f"{len(entry['products'])} itens (+{len(new_products)})"]},
-                          user, action="products_append")
-            return
+    old_count = row["cnt"] or 0
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            "UPDATE extractions SET products = products || %s WHERE id = %s",
+            (Json(new_products), quote_id),
+        )
+    new_count = old_count + len(new_products)
+    _append_audit(quote_id, subject,
+                  {"produtos": [f"{old_count} itens", f"{new_count} itens (+{len(new_products)})"]},
+                  user, action="products_append")
 
 
 def append_extraction_entry(quote: dict, user: str) -> None:
-    entries = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8")) if EXTRACTIONS_F.exists() else []
-    entries.append(quote)
-    EXTRACTIONS_F.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+    _insert_extraction(quote)
     _append_audit(quote["id"], quote.get("subject", ""),
                   {"_criado": [None, quote["id"]]}, user, action="bulk_import_create")
+
+
+def _insert_extraction(q: dict) -> None:
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO extractions (
+                id, is_manual, is_bulk_import, is_training,
+                date, "from", subject, request_type, project_type,
+                requester_name, department, recipient, cnpj,
+                smart_account, smart_account_domain, virtual_account,
+                project_ref, body, raw_email, products
+            ) VALUES (
+                %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s, %s
+            )
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (
+                q.get("id"),
+                q.get("is_manual", False),
+                q.get("is_bulk_import", False),
+                q.get("is_training", False),
+                q.get("date"),
+                q.get("from"),
+                q.get("subject"),
+                q.get("request_type"),
+                q.get("project_type"),
+                q.get("requester_name"),
+                q.get("department"),
+                q.get("recipient"),
+                q.get("cnpj"),
+                q.get("smart_account"),
+                q.get("smart_account_domain"),
+                q.get("virtual_account"),
+                q.get("project_ref"),
+                q.get("body"),
+                Json(q.get("raw_email") or {}),
+                Json(q.get("products") or []),
+            ),
+        )
 
 
 # ── Annotations ───────────────────────────────────────────────────────────────
 
 def load_annotations() -> dict:
-    if not ANNOTATIONS_F.exists():
-        return {}
-    return json.loads(ANNOTATIONS_F.read_text(encoding="utf-8"))
+    with db.get_cursor() as cur:
+        cur.execute("SELECT * FROM annotations")
+        return {r["quote_id"]: dict(r) for r in cur.fetchall()}
 
 
 def save_annotation(quote_id: str, subject: str, new_data: dict, user: str) -> None:
-    _ensure()
-    annotations = load_annotations()
-    old_data = annotations.get(quote_id, {})
+    with db.get_cursor() as cur:
+        cur.execute("SELECT * FROM annotations WHERE quote_id = %s", (quote_id,))
+        old = dict(cur.fetchone() or {})
 
-    changes = {
-        k: [old_data.get(k), v]
-        for k, v in new_data.items()
-        if old_data.get(k) != v
-    }
+    changes = {k: [old.get(k), v] for k, v in new_data.items() if old.get(k) != v}
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    new_data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    new_data["updated_by"] = user
-    annotations[quote_id] = new_data
-    ANNOTATIONS_F.write_text(json.dumps(annotations, ensure_ascii=False, indent=2), encoding="utf-8")
-
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO annotations (quote_id, status, valor_total, responsavel_interno,
+                                     fornecedor, observacoes, updated_at, updated_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (quote_id) DO UPDATE SET
+                status              = EXCLUDED.status,
+                valor_total         = EXCLUDED.valor_total,
+                responsavel_interno = EXCLUDED.responsavel_interno,
+                fornecedor          = EXCLUDED.fornecedor,
+                observacoes         = EXCLUDED.observacoes,
+                updated_at          = EXCLUDED.updated_at,
+                updated_by          = EXCLUDED.updated_by
+            """,
+            (
+                quote_id,
+                new_data.get("status", "Em Aberto"),
+                new_data.get("valor_total"),
+                new_data.get("responsavel_interno", ""),
+                new_data.get("fornecedor", ""),
+                new_data.get("observacoes", ""),
+                now_str,
+                user,
+            ),
+        )
     if changes:
         _append_audit(quote_id, subject, changes, user)
 
 
-# ── Corrections ──────────────────────────────────────────────────────────────
+# ── Corrections ───────────────────────────────────────────────────────────────
 
 def load_corrections() -> dict:
-    if not CORRECTIONS_F.exists():
-        return {}
-    return json.loads(CORRECTIONS_F.read_text(encoding="utf-8"))
+    with db.get_cursor() as cur:
+        cur.execute("SELECT quote_id, fields FROM corrections")
+        return {r["quote_id"]: r["fields"] for r in cur.fetchall()}
 
 
 def save_correction(quote_id: str, subject: str, fields: dict, user: str) -> None:
-    """Save manually corrected auto-extracted fields, keeping full history per field."""
-    _ensure()
-    all_corr  = load_corrections()
-    entry     = all_corr.get(quote_id, {})
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    changes   = {}
+    with db.get_cursor() as cur:
+        cur.execute("SELECT fields FROM corrections WHERE quote_id = %s", (quote_id,))
+        row = cur.fetchone()
+    entry = dict(row["fields"]) if row else {}
 
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    changes = {}
     for field, new_val in fields.items():
         new_val = new_val.strip() if isinstance(new_val, str) else new_val
-        current = entry.get(field, {}).get("current", None)
+        current = entry.get(field, {}).get("current")
         if current == new_val:
             continue
-        history = entry.get(field, {}).get("history", [])
+        history = list(entry.get(field, {}).get("history", []))
         history.append({"value": current, "at": timestamp, "by": user})
         entry[field] = {"current": new_val, "history": history}
         changes[field] = [current, new_val]
@@ -208,33 +255,44 @@ def save_correction(quote_id: str, subject: str, fields: dict, user: str) -> Non
     if not changes:
         return
 
-    all_corr[quote_id] = entry
-    CORRECTIONS_F.write_text(json.dumps(all_corr, ensure_ascii=False, indent=2), encoding="utf-8")
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO corrections (quote_id, fields) VALUES (%s, %s)
+            ON CONFLICT (quote_id) DO UPDATE SET fields = EXCLUDED.fields
+            """,
+            (quote_id, Json(entry)),
+        )
     _append_audit(quote_id, subject, changes, user, action="correction")
 
 
 # ── Audit log ─────────────────────────────────────────────────────────────────
 
 def _append_audit(quote_id: str, subject: str, changes: dict, user: str, action: str = "edit") -> None:
-    logs = load_audit_log()
-    logs.insert(0, {
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "user": user,
-        "quote_id": quote_id,
-        "subject": subject,
-        "action": action,
-        "changes": changes,
-    })
-    AUDIT_LOG_F.write_text(json.dumps(logs, ensure_ascii=False, indent=2), encoding="utf-8")
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO audit_log (username, quote_id, subject, action, changes)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (user, quote_id, subject, action, Json(changes)),
+        )
 
 
 def load_audit_log() -> list:
-    if not AUDIT_LOG_F.exists():
-        return []
-    return json.loads(AUDIT_LOG_F.read_text(encoding="utf-8"))
+    with db.get_cursor() as cur:
+        cur.execute('SELECT * FROM audit_log ORDER BY "timestamp" DESC')
+        rows = cur.fetchall()
+    result = []
+    for r in rows:
+        row = dict(r)
+        row["timestamp"] = str(row.get("timestamp", ""))[:19]
+        row["user"] = row.pop("username", "")
+        result.append(row)
+    return result
 
 
-# ── Stats ─────────────────────────────────────────────────────────────────────
+# ── Stats ──────────────────────────────────────────────────────────────────────
 
 def get_stats() -> dict:
     quotes = load_extractions()
@@ -271,7 +329,7 @@ def get_stats() -> dict:
     weeks: dict = defaultdict(int)
     for q in quotes:
         try:
-            qdate = datetime.strptime(q["date"], "%Y-%m-%d %H:%M:%S")
+            qdate = datetime.strptime(str(q["date"])[:19], "%Y-%m-%d %H:%M:%S")
             w = (now - qdate).days // 7
             if 0 <= w < 8:
                 weeks[7 - w] += 1
@@ -281,8 +339,6 @@ def get_stats() -> dict:
     week_data   = [weeks[i] for i in range(8)]
 
     # ── Operacional ──────────────────────────────────────────────────────────
-
-    # Por fornecedor (cotações + pedidos agrupados)
     forn_data: dict = defaultdict(lambda: {"Cotação": 0, "Pedido": 0})
     for q in quotes:
         ann  = annotations.get(q["id"], {})
@@ -292,7 +348,6 @@ def get_stats() -> dict:
         forn_data[forn][q.get("request_type", "Cotação")] += 1
     sorted_forn = sorted(forn_data.items(), key=lambda x: -(x[1]["Cotação"] + x[1]["Pedido"]))[:10]
 
-    # Por etapa do processo
     timelines = load_timelines()
     etapas: dict = defaultdict(int)
     for q in quotes:
@@ -306,16 +361,16 @@ def get_stats() -> dict:
         else:
             etapas["Concluído"] += 1
 
-    # Top 10 mais antigos ativos
+    # Top 10 mais antigos ativos — idade na etapa atual
     def _parse_date(d):
         try:
-            return datetime.strptime(d, "%Y-%m-%d %H:%M:%S")
+            return datetime.strptime(str(d)[:19], "%Y-%m-%d %H:%M:%S")
         except Exception:
             return datetime.min
 
     def _parse_step_date(d):
         try:
-            return datetime.strptime(d, "%Y-%m-%d")
+            return datetime.strptime(str(d), "%Y-%m-%d")
         except Exception:
             return None
 
@@ -341,7 +396,7 @@ def get_stats() -> dict:
         top10.append({
             "id":      q["id"],
             "subject": (q.get("subject") or "—")[:55],
-            "date":    q.get("date", "")[:10],
+            "date":    str(q.get("date", ""))[:10],
             "age":     age,
             "type":    rtype,
             "stage":   stage,
@@ -370,23 +425,18 @@ def get_stats() -> dict:
 
 
 def compute_auto_forecast(quote: dict, timeline: dict, deal: dict) -> tuple:
-    """
-    Calcula a previsão de entrega de um pedido. Usa max_estimated_delivery do CCW
-    se disponível; caso contrário, estima a partir de início_fabricação + maior lead_time + 10d.
-    Retorna (forecast_date_str_or_None, aggressor_dict_or_None).
-    """
     from datetime import date as _date, timedelta as _td
 
     ccw_delivery = deal.get("max_estimated_delivery", "") if deal else ""
     if ccw_delivery:
-        return ccw_delivery, {"source": "CCW", "last_sync": deal.get("last_ccw_sync", "")}
+        return str(ccw_delivery), {"source": "CCW", "last_sync": deal.get("last_ccw_sync", "")}
 
     aggressor = None
     inicio_str = timeline.get("dates", {}).get("inicio_fabricacao", "")
     if not inicio_str:
         return None, None
     try:
-        start  = _date.fromisoformat(inicio_str)
+        start = _date.fromisoformat(str(inicio_str)[:10])
     except ValueError:
         return None, None
 
@@ -409,11 +459,6 @@ def compute_auto_forecast(quote: dict, timeline: dict, deal: dict) -> tuple:
 
 
 def get_delivery_forecasts(after: str = "") -> list:
-    """
-    Lista de Pedidos (request_type == 'Pedido') com previsão de entrega calculada,
-    opcionalmente filtrados para depois de `after` (YYYY-MM-DD), ordenados do mais
-    distante para o mais próximo.
-    """
     quotes      = load_extractions()
     annotations = load_annotations()
     timelines   = load_timelines()
@@ -422,7 +467,8 @@ def get_delivery_forecasts(after: str = "") -> list:
     after_date = None
     if after:
         try:
-            after_date = datetime.strptime(after, "%Y-%m-%d").date()
+            from datetime import datetime as _dt
+            after_date = _dt.strptime(after, "%Y-%m-%d").date()
         except ValueError:
             after_date = None
 
@@ -436,41 +482,89 @@ def get_delivery_forecasts(after: str = "") -> list:
         if not forecast:
             continue
         try:
-            forecast_date = datetime.strptime(forecast[:10], "%Y-%m-%d").date()
+            from datetime import datetime as _dt
+            forecast_date = _dt.strptime(forecast[:10], "%Y-%m-%d").date()
         except ValueError:
             continue
         if after_date and forecast_date <= after_date:
             continue
         ann = annotations.get(q["id"], {})
         result.append({
-            "id":       q["id"],
-            "subject":  (q.get("subject") or "—")[:55],
-            "forecast": forecast_date.isoformat(),
+            "id":         q["id"],
+            "subject":    (q.get("subject") or "—")[:55],
+            "forecast":   forecast_date.isoformat(),
             "fornecedor": ann.get("fornecedor") or "—",
-            "status":   ann.get("status", "Em Aberto"),
+            "status":     ann.get("status", "Em Aberto"),
         })
 
     result.sort(key=lambda r: r["forecast"], reverse=True)
     return result
 
 
-# ── Deals ─────────────────────────────────────────────────────────────────────
+# ── Deals ──────────────────────────────────────────────────────────────────────
 
 def load_deals() -> dict:
-    if not DEALS_F.exists():
-        return {}
-    return json.loads(DEALS_F.read_text(encoding="utf-8"))
+    with db.get_cursor() as cur:
+        cur.execute("SELECT * FROM deals")
+        result = {}
+        for r in cur.fetchall():
+            row = dict(r)
+            # Normalise datetime/date objects to string (matching legacy JSON format)
+            for k in ("last_ccw_sync", "updated_at"):
+                if row.get(k) is not None:
+                    row[k] = str(row[k])[:19]
+            if row.get("max_estimated_delivery") is not None:
+                row["max_estimated_delivery"] = str(row["max_estimated_delivery"])[:10]
+            qid = row.pop("quote_id")
+            result[qid] = row
+        return result
 
 
 def save_deal(quote_id: str, subject: str, data: dict, user: str) -> None:
-    _ensure()
-    deals    = load_deals()
-    old_data = deals.get(quote_id, {})
-    changes  = {k: [old_data.get(k), v] for k, v in data.items() if old_data.get(k) != v and v}
-    data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    data["updated_by"] = user
-    deals[quote_id]    = data
-    DEALS_F.write_text(json.dumps(deals, ensure_ascii=False, indent=2), encoding="utf-8")
+    with db.get_cursor() as cur:
+        cur.execute("SELECT * FROM deals WHERE quote_id = %s", (quote_id,))
+        old_row = cur.fetchone()
+    old = dict(old_row) if old_row else {}
+    changes = {k: [old.get(k), v] for k, v in data.items() if old.get(k) != v and v}
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    max_del = data.get("max_estimated_delivery") or None
+
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO deals (quote_id, projeto_id_vale, logicalis_id, ntt_id,
+                               estimate_nacional, estimate_importado, order_id, deal_id,
+                               last_ccw_sync, max_estimated_delivery, updated_at, updated_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (quote_id) DO UPDATE SET
+                projeto_id_vale       = COALESCE(NULLIF(EXCLUDED.projeto_id_vale, ''),       deals.projeto_id_vale),
+                logicalis_id          = COALESCE(NULLIF(EXCLUDED.logicalis_id, ''),          deals.logicalis_id),
+                ntt_id                = COALESCE(NULLIF(EXCLUDED.ntt_id, ''),                deals.ntt_id),
+                estimate_nacional     = COALESCE(NULLIF(EXCLUDED.estimate_nacional, ''),     deals.estimate_nacional),
+                estimate_importado    = COALESCE(NULLIF(EXCLUDED.estimate_importado, ''),    deals.estimate_importado),
+                order_id              = COALESCE(NULLIF(EXCLUDED.order_id, ''),              deals.order_id),
+                deal_id               = COALESCE(NULLIF(EXCLUDED.deal_id, ''),               deals.deal_id),
+                last_ccw_sync         = COALESCE(EXCLUDED.last_ccw_sync,                     deals.last_ccw_sync),
+                max_estimated_delivery= COALESCE(EXCLUDED.max_estimated_delivery,            deals.max_estimated_delivery),
+                updated_at            = EXCLUDED.updated_at,
+                updated_by            = EXCLUDED.updated_by
+            """,
+            (
+                quote_id,
+                data.get("projeto_id_vale", ""),
+                data.get("logicalis_id", ""),
+                data.get("ntt_id", ""),
+                data.get("estimate_nacional", ""),
+                data.get("estimate_importado", ""),
+                data.get("order_id", ""),
+                data.get("deal_id", ""),
+                data.get("last_ccw_sync") or None,
+                max_del if max_del else None,
+                now_str,
+                user,
+            ),
+        )
     if changes:
         _append_audit(quote_id, subject, changes, user, action="deal")
 
@@ -478,62 +572,54 @@ def save_deal(quote_id: str, subject: str, data: dict, user: str) -> None:
 # ── Timelines ─────────────────────────────────────────────────────────────────
 
 def load_timelines() -> dict:
-    if not TIMELINES_F.exists():
-        return {}
-    return json.loads(TIMELINES_F.read_text(encoding="utf-8"))
+    with db.get_cursor() as cur:
+        cur.execute("SELECT * FROM timelines")
+        return {r["quote_id"]: {"dates": r["dates"],
+                                "updated_at": str(r["updated_at"] or "")[:19],
+                                "updated_by": r["updated_by"] or ""}
+                for r in cur.fetchall()}
 
 
 def save_timeline(quote_id: str, subject: str, dates: dict, user: str) -> None:
-    _ensure()
-    timelines = load_timelines()
-    old_dates = timelines.get(quote_id, {}).get("dates", {})
+    with db.get_cursor() as cur:
+        cur.execute("SELECT dates FROM timelines WHERE quote_id = %s", (quote_id,))
+        row = cur.fetchone()
+    old_dates = dict(row["dates"]) if row else {}
     changes = {k: [old_dates.get(k), v] for k, v in dates.items() if old_dates.get(k) != v}
-    timelines[quote_id] = {
-        "dates": dates,
-        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "updated_by": user,
-    }
-    TIMELINES_F.write_text(json.dumps(timelines, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO timelines (quote_id, dates, updated_at, updated_by)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (quote_id) DO UPDATE SET
+                dates      = EXCLUDED.dates,
+                updated_at = EXCLUDED.updated_at,
+                updated_by = EXCLUDED.updated_by
+            """,
+            (quote_id, Json(dates), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user),
+        )
     if changes:
         _append_audit(quote_id, subject, changes, user, action="timeline")
 
 
-# ── CCW Bot sync ─────────────────────────────────────────────────────────────
+# ── CCW Bot sync ──────────────────────────────────────────────────────────────
 
 def process_ccw_sync(quote_id: str, subject: str, order_id: str,
                      lines: list, user: str) -> dict:
     """
     Unified CCW sync. Detects scenario, computes final lead_time, creates products
-    if needed, updates deals.json, and saves a validation report.
-
-    Scenarios:
-      1 — quote has products AND all portal part_numbers found in CCW XLS
-      2 — quote has NO products → creates them from XLS
-      3 — quote has products AND some portal part_numbers NOT in CCW XLS
-
-    Lead_time final = max(lead_time_days) of items in intersection(portal, CCW).
-
-    Returns dict with scenario, max_estimated_delivery, max_lead_time_days,
-    products_created, intersection, only_in_portal, only_in_ccw, contributing_items.
+    if needed, updates deals, and saves a validation report.
     """
-    if not EXTRACTIONS_F.exists():
-        return {"scenario": 0, "error": "extractions not found"}
+    from collections import defaultdict as _dd
 
-    entries     = json.loads(EXTRACTIONS_F.read_text(encoding="utf-8"))
-    quote_entry = None
-    for entry in entries:
-        if "id" not in entry:
-            entry["id"] = _stable_id(entry)
-        if entry["id"] == quote_id:
-            quote_entry = entry
-            break
-
+    quote_entry = get_extraction_by_id(quote_id)
     if quote_entry is None:
         return {"scenario": 0, "error": "quote not found"}
 
-    # ── Deduplica CCW lines por part_number (max lead_time, soma qty) ──────────
-    ccw_map  = {}   # UPPER(pn) → {part_number, lead_time_days, estimated_delivery, qty}
-    qty_sum  = defaultdict(int)
+    # Deduplica CCW lines por part_number
+    ccw_map  = {}
+    qty_sum  = _dd(int)
     for ln in lines:
         pn = str(ln.get("part_number") or "").strip().upper()
         if not pn:
@@ -550,21 +636,17 @@ def process_ccw_sync(quote_id: str, subject: str, order_id: str,
                 "estimated_delivery": ln.get("estimated_delivery", ""),
             }
 
-    ccw_parts      = set(ccw_map.keys())
-    portal_products = quote_entry.get("products", [])
-    portal_parts   = {
+    ccw_parts       = set(ccw_map.keys())
+    portal_products = list(quote_entry.get("products") or [])
+    portal_parts    = {
         str(p.get("part_number") or "").strip().upper()
-        for p in portal_products
-        if p.get("part_number")
+        for p in portal_products if p.get("part_number")
     }
 
-    # ── Detecta cenário e executa ação ─────────────────────────────────────────
     products_created = 0
-    extractions_dirty = False
 
     if not portal_products:
-        # Cenário 2: sem produtos — cria a partir do XLS
-        scenario    = 2
+        scenario     = 2
         new_products = []
         for pn, data in ccw_map.items():
             new_products.append({
@@ -580,25 +662,27 @@ def process_ccw_sync(quote_id: str, subject: str, order_id: str,
                 "arquitetura":       "",
                 "categoria":         "",
             })
-        quote_entry["products"] = new_products
-        portal_parts     = ccw_parts
+        with db.get_cursor(commit=True) as cur:
+            cur.execute("UPDATE extractions SET products = %s WHERE id = %s",
+                        (Json(new_products), quote_id))
         products_created = len(new_products)
-        extractions_dirty = True
+        portal_parts  = ccw_parts.copy()
         intersection  = ccw_parts.copy()
         only_in_portal = set()
         only_in_ccw    = set()
-
+        _append_audit(quote_id, subject,
+                      {"ccw_products_created": [None,
+                          f"cenário 2 — {products_created} produto(s) criados do XLS CCW"]},
+                      user, action="ccw_sync")
     else:
         intersection   = portal_parts & ccw_parts
         only_in_portal = portal_parts - ccw_parts
         only_in_ccw    = ccw_parts    - portal_parts
         scenario = 1 if not only_in_portal else 3
 
-    # ── Calcula LeadTime final a partir da intersecção ─────────────────────────
     contributing = []
     max_lt_days  = 0
     max_delivery = None
-
     for pn in intersection:
         if pn in ccw_map:
             item = ccw_map[pn]
@@ -606,29 +690,15 @@ def process_ccw_sync(quote_id: str, subject: str, order_id: str,
             if item["lead_time_days"] > max_lt_days:
                 max_lt_days  = item["lead_time_days"]
                 max_delivery = item["estimated_delivery"]
-
     contributing.sort(key=lambda x: x["lead_time_days"], reverse=True)
 
-    # ── Grava extractions.json se criou produtos ───────────────────────────────
-    if extractions_dirty:
-        EXTRACTIONS_F.write_text(
-            json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        _append_audit(quote_id, subject,
-                      {"ccw_products_created": [None,
-                          f"cenário 2 — {products_created} produto(s) criados do XLS CCW"]},
-                      user, action="ccw_sync")
-
-    # ── Grava deals.json com max_estimated_delivery calculado ─────────────────
-    _ensure()
-    deals = load_deals()
-    deal  = dict(deals.get(quote_id, {}))
-    deal["last_ccw_sync"]          = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    deal["max_estimated_delivery"] = max_delivery or ""
+    deal_update = {
+        "last_ccw_sync":          datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "max_estimated_delivery": max_delivery or "",
+    }
     if order_id:
-        deal["order_id"] = order_id
-    deals[quote_id] = deal
-    DEALS_F.write_text(json.dumps(deals, ensure_ascii=False, indent=2), encoding="utf-8")
+        deal_update["order_id"] = order_id
+    save_deal(quote_id, subject, deal_update, user)
 
     _append_audit(quote_id, subject,
                   {"ccw_sync": [None,
@@ -639,85 +709,91 @@ def process_ccw_sync(quote_id: str, subject: str, order_id: str,
                       f"leadtime_final={max_lt_days}d delivery={max_delivery}"]},
                   user, action="ccw_sync")
 
-    # ── Salva relatório de validação ───────────────────────────────────────────
     result = {
-        "scenario":              scenario,
+        "scenario":               scenario,
         "max_estimated_delivery": max_delivery,
-        "max_lead_time_days":    max_lt_days,
-        "products_created":      products_created,
-        "intersection":          sorted(intersection),
-        "only_in_portal":        sorted(only_in_portal),
-        "only_in_ccw":           sorted(only_in_ccw),
-        "contributing_items":    contributing,
+        "max_lead_time_days":     max_lt_days,
+        "products_created":       products_created,
+        "intersection":           sorted(intersection),
+        "only_in_portal":         sorted(only_in_portal),
+        "only_in_ccw":            sorted(only_in_ccw),
+        "contributing_items":     contributing,
     }
     _save_ccw_validation(quote_id, subject, order_id, result)
     return result
 
 
 def _save_ccw_validation(quote_id: str, subject: str, order_id: str, result: dict) -> None:
-    existing = {}
-    if CCW_VALIDATIONS_F.exists():
-        try:
-            existing = json.loads(CCW_VALIDATIONS_F.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    existing[quote_id] = {
-        "quote_id":    quote_id,
-        "subject":     subject,
-        "order_id":    order_id,
-        "validated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        **result,
-    }
-    CCW_VALIDATIONS_F.write_text(
-        json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO ccw_validations
+                (quote_id, subject, order_id, validated_at, scenario,
+                 max_estimated_delivery, max_lead_time_days, products_created,
+                 intersection, only_in_portal, only_in_ccw, contributing_items)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                quote_id, subject, order_id,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                result.get("scenario"),
+                result.get("max_estimated_delivery") or None,
+                result.get("max_lead_time_days"),
+                result.get("products_created"),
+                Json(result.get("intersection", [])),
+                Json(result.get("only_in_portal", [])),
+                Json(result.get("only_in_ccw", [])),
+                Json(result.get("contributing_items", [])),
+            ),
+        )
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
 
 def load_users() -> list:
-    if not USERS_F.exists():
-        return []
-    return json.loads(USERS_F.read_text(encoding="utf-8"))
+    with db.get_cursor() as cur:
+        cur.execute("SELECT * FROM users ORDER BY created_at")
+        return [dict(r) for r in cur.fetchall()]
 
 
 def verify_user(username: str, password: str):
-    """Returns user dict on success, None on failure."""
-    for u in load_users():
-        if u["username"] == username:
-            if check_password_hash(u["password_hash"], password):
-                return u
+    with db.get_cursor() as cur:
+        cur.execute("SELECT * FROM users WHERE username = %s", (username,))
+        row = cur.fetchone()
+    if row and check_password_hash(row["password_hash"], password):
+        return dict(row)
     return None
 
 
 def list_users_safe() -> list:
-    """Returns all users without password hashes."""
     return [{k: v for k, v in u.items() if k != "password_hash"} for u in load_users()]
 
 
 def username_exists(username: str) -> bool:
-    return any(u["username"] == username for u in load_users())
+    with db.get_cursor() as cur:
+        cur.execute("SELECT 1 FROM users WHERE username = %s", (username,))
+        return cur.fetchone() is not None
 
 
 def create_user(username: str, password: str, role: str = "viewer",
                 nome: str = "", email: str = "", celular: str = "", empresa: str = "") -> None:
-    _ensure()
-    users = load_users()
-    users.append({
-        "username":      username,
-        "password_hash": generate_password_hash(password, method="pbkdf2:sha256"),
-        "role":          role,
-        "nome":          nome,
-        "email":         email,
-        "celular":       celular,
-        "empresa":       empresa,
-        "created_at":    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    })
-    USERS_F.write_text(json.dumps(users, ensure_ascii=False, indent=2), encoding="utf-8")
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO users (username, password_hash, role, nome, email, celular, empresa, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (username) DO NOTHING
+            """,
+            (
+                username,
+                generate_password_hash(password, method="pbkdf2:sha256"),
+                role, nome, email, celular, empresa,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
 
 
 def ensure_default_user() -> None:
-    _ensure()
     if not load_users():
         create_user("admin", "admin123", role="admin")
         print("  [portal] Usuário padrão criado → admin / admin123  ⚠️  ALTERE A SENHA!")

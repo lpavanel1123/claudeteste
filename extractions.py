@@ -1,23 +1,46 @@
-import json
 import uuid
-from pathlib import Path
+from psycopg2.extras import Json
 
-EXTRACTIONS_FILE = "extractions.json"
+import db
 
 
 def save(parsed_email: dict, extracted: dict) -> None:
-    path = Path(EXTRACTIONS_FILE)
-    entries = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+    entry_id = str(uuid.uuid4())
 
-    entry = {
-        "id":        str(uuid.uuid4()),
-        "date":      parsed_email["date"],
-        "from":      parsed_email["from"],
-        "subject":   parsed_email["subject"],
-        **extracted,
-        "raw_email": parsed_email.get("raw_email", {}),
-    }
-    entries.append(entry)
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO extractions (
+                id, date, "from", subject,
+                request_type, project_type, requester_name, department,
+                recipient, cnpj, smart_account, smart_account_domain,
+                virtual_account, project_ref, body, raw_email, products
+            ) VALUES (
+                %s, %s, %s, %s,
+                %s, %s, %s, %s,
+                %s, %s, %s, %s,
+                %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                entry_id,
+                parsed_email.get("date"),
+                parsed_email.get("from"),
+                parsed_email.get("subject"),
+                extracted.get("request_type"),
+                extracted.get("project_type"),
+                extracted.get("requester_name"),
+                extracted.get("department"),
+                extracted.get("recipient"),
+                extracted.get("cnpj"),
+                extracted.get("smart_account"),
+                extracted.get("smart_account_domain"),
+                extracted.get("virtual_account"),
+                extracted.get("project_ref"),
+                parsed_email.get("body"),
+                Json(parsed_email.get("raw_email") or {}),
+                Json(extracted.get("products") or []),
+            ),
+        )
 
-    path.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"  [extractions] salvo em {EXTRACTIONS_FILE} ({len(entries)} entradas)")
+    print(f"  [extractions] salvo no Postgres: {parsed_email.get('subject')!r}")

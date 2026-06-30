@@ -9,31 +9,19 @@ Fluxo:
      upload automático.
 """
 
-import json
-from pathlib import Path
-
-_KB_FILE = Path("data/pid_kb.json")
-
-
-def _load() -> dict:
-    if not _KB_FILE.exists():
-        return {}
-    try:
-        return json.loads(_KB_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-
-def _save(kb: dict) -> None:
-    _KB_FILE.parent.mkdir(exist_ok=True)
-    _KB_FILE.write_text(json.dumps(kb, ensure_ascii=False, indent=2), encoding="utf-8")
+import db
 
 
 def lookup(pid: str):
     """Return (arquitetura, categoria) from KB, or (None, None) if not found."""
-    entry = _load().get(str(pid).strip().upper())
-    if entry:
-        return entry.get("arquitetura"), entry.get("categoria")
+    with db.get_cursor() as cur:
+        cur.execute(
+            "SELECT arquitetura, categoria FROM pid_kb WHERE part_number = %s",
+            (str(pid).strip().upper(),),
+        )
+        row = cur.fetchone()
+    if row:
+        return row["arquitetura"], row["categoria"]
     return None, None
 
 
@@ -42,14 +30,20 @@ def update(pid: str, arquitetura: str, categoria: str, source: str = "manual") -
 
     Manual entries are never overwritten by auto-classification on future uploads.
     """
-    kb  = _load()
     key = str(pid).strip().upper()
-    existing = kb.get(key, {})
-    # Don't downgrade a manual entry to auto
-    if existing.get("source") == "manual" and source == "auto":
-        return
-    kb[key] = {"arquitetura": arquitetura, "categoria": categoria, "source": source}
-    _save(kb)
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO pid_kb (part_number, arquitetura, categoria, source)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (part_number) DO UPDATE SET
+                arquitetura = EXCLUDED.arquitetura,
+                categoria   = EXCLUDED.categoria,
+                source      = EXCLUDED.source
+            WHERE pid_kb.source <> 'manual' OR EXCLUDED.source = 'manual'
+            """,
+            (key, arquitetura, categoria, source),
+        )
 
 
 def classify_with_kb(pid: str, desc: str, classifier_fn) -> tuple:
@@ -81,10 +75,9 @@ def apply_manual_corrections(old_products: list, new_products: list) -> int:
         new_cat  = p.get("categoria", "")
         if not new_arch:
             continue
-        old = old_map.get(pid, {})
+        old      = old_map.get(pid, {})
         old_arch = old.get("arquitetura", "")
         old_cat  = old.get("categoria", "")
-        # If arquitetura or categoria changed, it's a manual correction
         if new_arch != old_arch or new_cat != old_cat:
             update(pid, new_arch, new_cat, source="manual")
             count += 1

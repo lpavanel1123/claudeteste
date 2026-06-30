@@ -84,27 +84,29 @@ PORTAL_PORT=8080
 
 ---
 
-## Como executar
+## Hospedagem (Railway)
 
-### Windows (PowerShell)
+O projeto roda no **Railway** (plano Hobby, US$5/mês), com Postgres gerenciado substituindo os arquivos JSON locais.
 
-> **Nota:** Defina `PYTHONUTF8=1` antes de iniciar os servidores para evitar erros de encoding.
+```
+Railway Project "claudeteste"
+├── Postgres (plugin gerenciado, backups automáticos, 5 GB)
+├── portal   → gunicorn portal:app --bind 0.0.0.0:$PORT   → app.flowsquote.com
+└── webhook  → gunicorn webhook_server:app --bind 0.0.0.0:$PORT → webhook.flowsquote.com
+```
 
-Abra **3 terminais** com o venv ativo:
+Push para `main` → deploy automático em ambos os serviços. Ver `COMO_RODAR.md` para instruções de setup e desenvolvimento local.
+
+## Como executar localmente
+
+> **Pré-requisito:** `DATABASE_URL` configurado no `.env` (Postgres do Railway via proxy TCP, ou instância local).
+
+Abra **2 terminais** com o venv ativo:
 
 | Terminal | Comando | Função |
 |---|---|---|
 | 1 | `$env:PYTHONUTF8="1"; python portal.py` | Portal web em localhost:8080 |
 | 2 | `$env:PYTHONUTF8="1"; python main.py` | Webhook na porta 8025 |
-| 3 | `cloudflared tunnel run claudeteste` | Tunnel Cloudflare |
-
-### Linux / macOS
-
-```bash
-PYTHONUTF8=1 python3 portal.py &
-PYTHONUTF8=1 python3 main.py &
-cloudflared tunnel run claudeteste
-```
 
 Acesse **http://localhost:8080** → login com `admin` / `admin123`
 *(altere a senha após o primeiro acesso via Admin → Usuários)*
