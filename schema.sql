@@ -123,3 +123,12 @@ CREATE TABLE IF NOT EXISTS email_log (
   body         TEXT,
   attachments  JSONB DEFAULT '[]'
 );
+
+-- Status do bot_to_ccw (push model — bot envia após cada run)
+CREATE TABLE IF NOT EXISTS bot_status (
+  id            INT PRIMARY KEY DEFAULT 1,
+  pushed_at     TIMESTAMP NOT NULL DEFAULT now(),
+  runs          JSONB NOT NULL DEFAULT '[]',
+  order_errors  JSONB NOT NULL DEFAULT '{}',
+  token_info    JSONB NOT NULL DEFAULT '{}'
+);

@@ -14,3 +14,7 @@ PORTAL_SECRET_KEY    = os.getenv("PORTAL_SECRET_KEY", "")
 PORTAL_API_KEY       = os.getenv("PORTAL_API_KEY", "")
 
 DATABASE_URL         = os.getenv("DATABASE_URL", "")
+
+WEBEX_USER_TOKEN     = os.getenv("WEBEX_USER_TOKEN", "")
+WEBHOOK_HEALTH_URL   = os.getenv("WEBHOOK_HEALTH_URL",
+                                  f"http://localhost:{os.getenv('WEBHOOK_PORT', '8025')}/health")

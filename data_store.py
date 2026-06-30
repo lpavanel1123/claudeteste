@@ -824,6 +824,31 @@ def change_password(username: str, current_password: str, new_password: str) -> 
     return True, ""
 
 
+def save_bot_status(runs: list, order_errors: dict, token_info: dict) -> None:
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO bot_status (id, pushed_at, runs, order_errors, token_info)
+            VALUES (1, now(), %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET
+                pushed_at    = now(),
+                runs         = EXCLUDED.runs,
+                order_errors = EXCLUDED.order_errors,
+                token_info   = EXCLUDED.token_info
+            """,
+            (Json(runs), Json(order_errors), Json(token_info)),
+        )
+
+
+def load_bot_status() -> dict:
+    with db.get_cursor() as cur:
+        cur.execute("SELECT * FROM bot_status WHERE id = 1")
+        row = cur.fetchone()
+    if not row:
+        return {"runs": [], "order_errors": {}, "token_info": {}, "pushed_at": None}
+    return _str_dates(dict(row))
+
+
 def ensure_default_user() -> None:
     if not load_users():
         create_user("admin", "admin123", role="admin")

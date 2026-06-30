@@ -1,10 +1,9 @@
 from functools import wraps
 from datetime import datetime
-from pathlib import Path
-import json
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash, send_file
 import data_store
 import config
+import db
 from classifier import classify as _classify
 import pid_kb as _kb
 
@@ -860,9 +859,6 @@ def api_leadtime():
 
 # ── Observabilidade ───────────────────────────────────────────────────────────
 
-_BOT_METRICS = Path(__file__).parent.parent / "bot_to_ccw" / "metrics.json"
-
-
 def _service_check(url: str, timeout: int = 4) -> dict:
     import urllib.request as _req
     import urllib.error   as _err2
@@ -886,22 +882,18 @@ def admin_observability():
     return render_template("admin_observability.html")
 
 
-_BOT_DIR          = Path(__file__).parent.parent / "bot_to_ccw"
-_BOT_ENV          = _BOT_DIR / ".env"
-_BOT_TOKEN_INFO   = _BOT_DIR / "token_info.json"
-_BOT_ORDER_ERRORS = _BOT_DIR / "order_errors.json"
-_INBOX_FILE       = Path(__file__).parent / config.INBOX_FILE
-
-
-def _read_bot_env_value(key: str) -> str:
-    if not _BOT_ENV.exists():
-        return ""
-    import re
-    for line in _BOT_ENV.read_text(encoding="utf-8").splitlines():
-        m = re.match(rf'^{key}=["\']?([^"\'#\n]+)["\']?', line.strip())
-        if m:
-            return m.group(1).strip()
-    return ""
+@app.route("/api/v1/bot-status", methods=["POST"])
+def api_bot_status_push():
+    auth = request.headers.get("Authorization", "")
+    if not config.PORTAL_API_KEY or auth != f"Bearer {config.PORTAL_API_KEY}":
+        return jsonify({"error": "unauthorized"}), 401
+    payload = request.get_json(silent=True) or {}
+    data_store.save_bot_status(
+        payload.get("runs", []),
+        payload.get("order_errors", {}),
+        payload.get("token_info", {}),
+    )
+    return jsonify({"ok": True})
 
 
 @app.route("/api/v1/status")
@@ -917,15 +909,13 @@ def api_status():
     services["portal"] = {"status": "up", "latency_ms": 0, "label": "Portal"}
 
     # Webhook server
-    wh = _service_check(f"http://localhost:{config.WEBHOOK_PORT}/health")
-    wh["label"] = f"Webhook Server (:{config.WEBHOOK_PORT})"
+    wh = _service_check(config.WEBHOOK_HEALTH_URL)
+    wh["label"] = "Webhook Server"
     services["webhook"] = wh
 
-    # Webex API — usa o token real do bot para validar + checar latência
-    webex_token = _read_bot_env_value("WEBEX_USER_TOKEN")
+    # Webex API
+    webex_token = config.WEBEX_USER_TOKEN
     t0 = _t.time()
-    webex_user  = None
-    webex_valid = False
     try:
         r = _req.Request(
             "https://webexapis.com/v1/people/me",
@@ -936,9 +926,7 @@ def api_status():
                 lat = round((_t.time() - t0) * 1000)
                 import json as _json2
                 data = _json2.loads(resp.read())
-                webex_user  = data.get("displayName", "")
-                webex_valid = True
-                services["webex_api"] = {"status": "up", "latency_ms": lat, "token_valid": True, "user": webex_user}
+                services["webex_api"] = {"status": "up", "latency_ms": lat, "token_valid": True, "user": data.get("displayName", "")}
         except _err2.HTTPError as e:
             lat = round((_t.time() - t0) * 1000)
             if e.code == 401:
@@ -951,59 +939,37 @@ def api_status():
         services["webex_api"] = {"status": "down", "latency_ms": None, "message": str(ex)[:60]}
     services["webex_api"]["label"] = "Webex API"
 
-    # Token info (expiry)
-    token_info = {}
-    if _BOT_TOKEN_INFO.exists():
-        try:
-            token_info = json.loads(_BOT_TOKEN_INFO.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-
-    # Bot CCW — lê metrics.json
-    bot_metrics = {"runs": []}
-    if _BOT_METRICS.exists():
-        try:
-            bot_metrics = json.loads(_BOT_METRICS.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-
-    last_run   = bot_metrics["runs"][-1] if bot_metrics["runs"] else None
-    bot_status = "nunca_executado"
+    # Bot CCW + token_info + order_errors — lidos do banco (push model)
+    bs         = data_store.load_bot_status()
+    bot_runs   = bs.get("runs") or []
+    last_run   = bot_runs[-1] if bot_runs else None
+    bot_st     = "nunca_executado"
     if last_run:
-        bot_status = "ok" if last_run.get("failures", 0) == 0 else "falha_parcial"
+        bot_st = "ok" if last_run.get("failures", 0) == 0 else "falha_parcial"
         if last_run.get("success", 0) == 0:
-            bot_status = "falha_total"
+            bot_st = "falha_total"
     services["bot_ccw"] = {
-        "status":   bot_status,
-        "label":    "Bot CCW (run_daily)",
-        "last_run": last_run.get("started_at") if last_run else None,
+        "status":    bot_st,
+        "label":     "Bot CCW (run_daily)",
+        "last_run":  last_run.get("started_at") if last_run else None,
+        "pushed_at": bs.get("pushed_at"),
     }
 
-    # Contagem de emails no inbox.md
+    # Contagem de emails recebidos (email_log table)
     email_count = 0
-    if _INBOX_FILE.exists():
-        try:
-            text = _INBOX_FILE.read_text(encoding="utf-8")
-            email_count = text.count("\n---\n") + (1 if text.startswith("---\n") else 0)
-            if email_count == 0 and "---" in text:
-                email_count = text.count("\n---")
-        except Exception:
-            pass
-
-    # Order errors / suspended orders
-    order_errors = {}
-    if _BOT_ORDER_ERRORS.exists():
-        try:
-            order_errors = json.loads(_BOT_ORDER_ERRORS.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+    try:
+        with db.get_cursor() as cur:
+            cur.execute("SELECT COUNT(*) AS n FROM email_log")
+            email_count = (cur.fetchone() or {}).get("n", 0)
+    except Exception:
+        pass
 
     return jsonify({
         "services":     services,
-        "token_info":   token_info,
+        "token_info":   bs.get("token_info", {}),
         "email_count":  email_count,
-        "bot_metrics":  bot_metrics,
-        "order_errors": order_errors,
+        "bot_metrics":  {"runs": bot_runs},
+        "order_errors": bs.get("order_errors", {}),
         "timestamp":    datetime.now().isoformat(),
     })
 
