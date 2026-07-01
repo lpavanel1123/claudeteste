@@ -373,17 +373,23 @@ def quote_products_upload(quote_id):
         return str(v).strip()
 
     # Detect column indices dynamically from the header row.
-    # Supports both the modelo.xlsx layout (Part Number in col A) and legacy CCW exports.
+    # Supports the modelo.xlsx layout, legacy CCW exports (Part Number in col A)
+    # and the CCW "Order Status" export (Item Name / Order Line Details tab).
     _COL_KEYS = {
         "part number":        "part",
+        "item name":          "part",
         "description":        "desc",
         "qty":                "qty",
+        "quantity":           "qty",
         "unit list price":    "ulp",
+        "list price":         "ulp",
         "estimated lead time": "lt",
         "disc(%)":            "disc",
+        "discount":           "disc",
         "unit net price":     "unp",
         "extended net price": "enp",
     }
+    _HEADER_HINTS = ("part number", "item name")
 
     def _find_cols(header_cells):
         cols = {}
@@ -394,15 +400,25 @@ def quote_products_upload(quote_id):
                     cols[name] = idx
         return cols
 
+    def _is_header_row(header_cells):
+        return any(hint in str(c or "").lower() for c in header_cells for hint in _HEADER_HINTS)
+
     try:
-        if fname.endswith(".xls"):
+        # Content sniffing: the real .xlsx (zip) signature takes precedence over the
+        # file extension, since CCW "Order Status" exports are sometimes downloaded
+        # with a .xls extension while actually containing .xlsx (zip) data.
+        if buf[:4] != b"PK\x03\x04":
             import xlrd
             wb = xlrd.open_workbook(file_contents=buf)
-            ws = wb.sheet_by_index(0)
-            hdr_row = next((r for r in range(ws.nrows)
-                            if any("part number" in str(ws.cell_value(r, c)).lower()
-                                   for c in range(ws.ncols))), None)
-            if hdr_row is None:
+            ws = hdr_row = None
+            for sheet in wb.sheets():
+                for r in range(sheet.nrows):
+                    if _is_header_row([sheet.cell_value(r, c) for c in range(sheet.ncols)]):
+                        ws, hdr_row = sheet, r
+                        break
+                if ws:
+                    break
+            if ws is None:
                 flash("Coluna 'Part Number' não encontrada — verifique se é um export CCW.", "danger")
                 return redirect(url_for("quote_detail", quote_id=quote_id))
             cols = _find_cols([ws.cell_value(hdr_row, c) for c in range(ws.ncols)])
@@ -429,14 +445,31 @@ def quote_products_upload(quote_id):
             from openpyxl import load_workbook
             from io import BytesIO
             wb = load_workbook(BytesIO(buf), data_only=True)
-            ws = wb.active
-            hdr_row = next((r for r in range(1, ws.max_row + 1)
-                            if any("part number" in str(ws.cell(r, c).value or "").lower()
-                                   for c in range(1, ws.max_column + 1))), None)
-            if hdr_row is None:
+            ws = hdr_row = None
+            for sheet in wb.worksheets:
+                if sheet.sheet_state != "visible":
+                    continue
+                for r in range(1, sheet.max_row + 1):
+                    if _is_header_row([sheet.cell(r, c).value for c in range(1, sheet.max_column + 1)]):
+                        ws, hdr_row = sheet, r
+                        break
+                if ws:
+                    break
+            if ws is None:
                 flash("Coluna 'Part Number' não encontrada — verifique se é um export CCW.", "danger")
                 return redirect(url_for("quote_detail", quote_id=quote_id))
             cols = _find_cols([ws.cell(hdr_row, c).value for c in range(1, ws.max_column + 1)])
+
+            # Order-level exports (e.g. "Order Line Details" tab) don't carry a
+            # per-line lead time — fall back to the order's overall estimate.
+            fallback_lt = ""
+            if "lt" not in cols and "Order Header" in wb.sheetnames:
+                oh = wb["Order Header"]
+                for r in range(1, oh.max_row + 1):
+                    if "estimated lead time" in str(oh.cell(r, 1).value or "").lower():
+                        fallback_lt = _fmt(oh.cell(r, 2).value)
+                        break
+
             for r in range(hdr_row + 1, ws.max_row + 1):
                 get = lambda k: ws.cell(r, cols[k] + 1).value if k in cols else None
                 part = str(get("part") or "").strip()
@@ -449,7 +482,7 @@ def quote_products_upload(quote_id):
                     "part_number":        part,
                     "description":        desc,
                     "unit_list_price":    _fmt(get("ulp")),
-                    "lead_time":          _fmt(get("lt")),
+                    "lead_time":          _fmt(get("lt")) if "lt" in cols else fallback_lt,
                     "discount_pct":       _fmt(get("disc")),
                     "unit_net_price":     _fmt(get("unp")),
                     "extended_net_price": _fmt(get("enp")),
