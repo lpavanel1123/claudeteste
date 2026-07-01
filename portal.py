@@ -220,9 +220,13 @@ def quotes_delete():
 @app.route("/quotes/<quote_id>")
 @login_required
 def quote_detail(quote_id):
-    quote = next((q for q in data_store.load_extractions() if q["id"] == quote_id), None)
-    if not quote:
+    all_quotes = data_store.load_extractions()
+    idx = next((i for i, q in enumerate(all_quotes) if q["id"] == quote_id), None)
+    if idx is None:
         return "Cotação não encontrada", 404
+    quote     = all_quotes[idx]
+    prev_id   = all_quotes[idx - 1]["id"] if idx > 0 else None
+    next_id   = all_quotes[idx + 1]["id"] if idx < len(all_quotes) - 1 else None
     ann      = data_store.load_annotations().get(quote_id, {})
     corr     = data_store.load_corrections().get(quote_id, {})
     timeline = data_store.load_timelines().get(quote_id, {"dates": {}})
@@ -237,7 +241,8 @@ def quote_detail(quote_id):
                            statuses=STATUSES, correctable=data_store.CORRECTABLE_FIELDS,
                            timeline=timeline, timeline_steps=tl_steps,
                            deal=deal, deal_fields=data_store.DEAL_FIELDS,
-                           auto_forecast=auto_forecast, aggressor=aggressor)
+                           auto_forecast=auto_forecast, aggressor=aggressor,
+                           prev_id=prev_id, next_id=next_id)
 
 
 @app.route("/quotes/new", methods=["GET", "POST"])
