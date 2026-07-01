@@ -338,65 +338,154 @@ def load_audit_log() -> list:
 # ── Stats ──────────────────────────────────────────────────────────────────────
 
 def get_stats() -> dict:
-    quotes = load_extractions()
-    annotations = load_annotations()
-
-    for q in quotes:
-        ann = annotations.get(q["id"], {})
-        q["_status"] = ann.get("status", "Em Aberto")
-        q["_valor"] = ann.get("valor_total") or 0
-
-    total     = len(quotes)
-    cotacoes  = sum(1 for q in quotes if q.get("request_type") == "Cotação")
-    pedidos   = sum(1 for q in quotes if q.get("request_type") == "Pedido")
-    valor_total = sum(float(q["_valor"]) for q in quotes if q["_valor"])
-    abertas   = sum(1 for q in quotes if q["_status"] in ("Em Aberto", "Em Análise"))
-    fechadas  = total - abertas
-
-    tipos = defaultdict(int)
-    for q in quotes:
-        tipos[q.get("request_type", "NA")] += 1
-
-    statuses = defaultdict(int)
-    for q in quotes:
-        statuses[q["_status"]] += 1
-
-    deptos = defaultdict(int)
-    for q in quotes:
-        d = q.get("department", "NA")
-        if d and d != "NA":
-            deptos[d] += 1
-    top_deptos = sorted(deptos.items(), key=lambda x: -x[1])[:5]
-
     now = datetime.now()
-    weeks: dict = defaultdict(int)
-    for q in quotes:
-        try:
-            qdate = datetime.strptime(str(q["date"])[:19], "%Y-%m-%d %H:%M:%S")
-            w = (now - qdate).days // 7
-            if 0 <= w < 8:
-                weeks[7 - w] += 1
-        except Exception:
-            pass
+
+    # ── 1. Scalar totals ──────────────────────────────────────────────────────
+    # One query: total, cotações, pedidos, valor_total, abertas — all via SQL
+    # aggregation so no rows are loaded into Python memory.
+    with db.get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                COUNT(*)                                                          AS total,
+                COUNT(*) FILTER (WHERE e.request_type = 'Cotação')               AS cotacoes,
+                COUNT(*) FILTER (WHERE e.request_type = 'Pedido')                AS pedidos,
+                COALESCE(SUM(a.valor_total), 0)                                  AS valor_total,
+                COUNT(*) FILTER (WHERE COALESCE(a.status, 'Em Aberto')
+                                       IN ('Em Aberto', 'Em Análise'))           AS abertas
+            FROM extractions e
+            LEFT JOIN annotations a ON a.quote_id = e.id
+            """
+        )
+        row = cur.fetchone()
+
+    total       = int(row["total"])
+    cotacoes    = int(row["cotacoes"])
+    pedidos     = int(row["pedidos"])
+    valor_total = float(row["valor_total"])
+    abertas     = int(row["abertas"])
+    fechadas    = total - abertas
+
+    # ── 2. Count by request_type ──────────────────────────────────────────────
+    with db.get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT COALESCE(request_type, 'NA') AS label, COUNT(*) AS cnt
+            FROM extractions
+            GROUP BY request_type
+            ORDER BY cnt DESC
+            """
+        )
+        tipos_rows = cur.fetchall()
+
+    chart_tipos = {
+        "labels": [r["label"] for r in tipos_rows],
+        "data":   [int(r["cnt"]) for r in tipos_rows],
+    }
+
+    # ── 3. Count by status ────────────────────────────────────────────────────
+    with db.get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT COALESCE(a.status, 'Em Aberto') AS label, COUNT(*) AS cnt
+            FROM extractions e
+            LEFT JOIN annotations a ON a.quote_id = e.id
+            GROUP BY a.status
+            ORDER BY cnt DESC
+            """
+        )
+        status_rows = cur.fetchall()
+
+    chart_status = {
+        "labels": [r["label"] for r in status_rows],
+        "data":   [int(r["cnt"]) for r in status_rows],
+    }
+
+    # ── 4. Top 5 departments ──────────────────────────────────────────────────
+    with db.get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT department AS label, COUNT(*) AS cnt
+            FROM extractions
+            WHERE department IS NOT NULL AND department <> '' AND department <> 'NA'
+            GROUP BY department
+            ORDER BY cnt DESC
+            LIMIT 5
+            """
+        )
+        depto_rows = cur.fetchall()
+
+    chart_deptos = {
+        "labels": [r["label"][:25] for r in depto_rows],
+        "data":   [int(r["cnt"]) for r in depto_rows],
+    }
+
+    # ── 5. Weekly buckets (last 8 weeks) ──────────────────────────────────────
+    # week_idx = 7 means "this week", 0 means "7 weeks ago".
+    # EXTRACT(EPOCH …) / 604800 gives fractional weeks; FLOOR gives whole weeks.
+    with db.get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                (7 - FLOOR(EXTRACT(EPOCH FROM (NOW() - date)) / 604800)::int) AS week_idx,
+                COUNT(*) AS cnt
+            FROM extractions
+            WHERE date >= NOW() - INTERVAL '8 weeks'
+            GROUP BY week_idx
+            """
+        )
+        week_rows = cur.fetchall()
+
+    week_map    = {int(r["week_idx"]): int(r["cnt"]) for r in week_rows
+                   if 0 <= int(r["week_idx"]) <= 7}
     week_labels = [(now - timedelta(weeks=7 - i)).strftime("Sem %d/%m") for i in range(8)]
-    week_data   = [weeks[i] for i in range(8)]
+    week_data   = [week_map.get(i, 0) for i in range(8)]
 
-    # ── Operacional ──────────────────────────────────────────────────────────
-    forn_data: dict = defaultdict(lambda: {"Cotação": 0, "Pedido": 0})
-    for q in quotes:
-        ann  = annotations.get(q["id"], {})
-        forn = (ann.get("fornecedor") or "").strip()
-        if not forn:
-            continue
-        forn_data[forn][q.get("request_type", "Cotação")] += 1
-    sorted_forn = sorted(forn_data.items(), key=lambda x: -(x[1]["Cotação"] + x[1]["Pedido"]))[:10]
+    chart_semanas = {"labels": week_labels, "data": week_data}
 
-    timelines = load_timelines()
+    # ── 6. Top 10 fornecedores by cotações + pedidos ──────────────────────────
+    with db.get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                TRIM(a.fornecedor)                                              AS fornecedor,
+                COUNT(*) FILTER (WHERE e.request_type = 'Cotação')             AS cotacoes,
+                COUNT(*) FILTER (WHERE e.request_type = 'Pedido')              AS pedidos
+            FROM annotations a
+            JOIN extractions e ON e.id = a.quote_id
+            WHERE a.fornecedor IS NOT NULL AND TRIM(a.fornecedor) <> ''
+            GROUP BY TRIM(a.fornecedor)
+            ORDER BY (COUNT(*) FILTER (WHERE e.request_type = 'Cotação')
+                    + COUNT(*) FILTER (WHERE e.request_type = 'Pedido')) DESC
+            LIMIT 10
+            """
+        )
+        forn_rows = cur.fetchall()
+
+    chart_fornecedor = {
+        "labels":   [r["fornecedor"] for r in forn_rows],
+        "cotacoes": [int(r["cotacoes"]) for r in forn_rows],
+        "pedidos":  [int(r["pedidos"]) for r in forn_rows],
+    }
+
+    # ── 7. Timeline stages (etapas) ───────────────────────────────────────────
+    # Fetch only (id, request_type, timeline dates) — no products/body/raw_email.
+    # The first-incomplete-step logic is O(steps) per quote, not O(n*m) overall.
+    with db.get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT e.id, e.request_type, COALESCE(t.dates, '{}'::jsonb) AS dates
+            FROM extractions e
+            LEFT JOIN timelines t ON t.quote_id = e.id
+            """
+        )
+        tl_rows = cur.fetchall()
+
     etapas: dict = defaultdict(int)
-    for q in quotes:
-        rtype      = q.get("request_type", "Cotação")
+    for row in tl_rows:
+        rtype      = row["request_type"] or "Cotação"
         steps_list = TIMELINE_STEPS.get(rtype, TIMELINE_STEPS["Cotação"])
-        tl_dates   = timelines.get(q["id"], {}).get("dates", {})
+        tl_dates   = row["dates"] or {}
         for step in steps_list:
             if not tl_dates.get(step["key"]):
                 etapas[step["label"]] += 1
@@ -404,8 +493,31 @@ def get_stats() -> dict:
         else:
             etapas["Concluído"] += 1
 
-    # Top 10 mais antigos ativos — idade na etapa atual
-    def _parse_date(d):
+    chart_etapas = {"labels": list(etapas.keys()), "data": list(etapas.values())}
+
+    # ── 8. Top 10 oldest active quotes ───────────────────────────────────────
+    # Only 10 rows fetched; stage/age calculation done in Python on those 10.
+    with db.get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                e.id,
+                e.subject,
+                e.date,
+                e.request_type,
+                COALESCE(a.status, 'Em Aberto')    AS status,
+                COALESCE(t.dates, '{}'::jsonb)     AS tl_dates
+            FROM extractions e
+            LEFT JOIN annotations a ON a.quote_id = e.id
+            LEFT JOIN timelines   t ON t.quote_id = e.id
+            WHERE COALESCE(a.status, 'Em Aberto') IN ('Em Aberto', 'Em Análise', 'Aprovada')
+            ORDER BY e.date ASC
+            LIMIT 10
+            """
+        )
+        oldest_rows = cur.fetchall()
+
+    def _parse_dt(d):
         try:
             return datetime.strptime(str(d)[:19], "%Y-%m-%d %H:%M:%S")
         except Exception:
@@ -417,15 +529,13 @@ def get_stats() -> dict:
         except Exception:
             return None
 
-    active = [q for q in quotes if q["_status"] in {"Em Aberto", "Em Análise", "Aprovada"}]
-    oldest = sorted(active, key=lambda q: _parse_date(q.get("date", "")))[:10]
-    top10  = []
-    for q in oldest:
-        rtype      = q.get("request_type", "Cotação")
+    top10 = []
+    for row in oldest_rows:
+        rtype      = row["request_type"] or "Cotação"
         steps_list = TIMELINE_STEPS.get(rtype, TIMELINE_STEPS["Cotação"])
-        tl_dates   = timelines.get(q["id"], {}).get("dates", {})
+        tl_dates   = row["tl_dates"] or {}
         stage           = "Concluído"
-        stage_entry     = _parse_date(q.get("date", ""))
+        stage_entry     = _parse_dt(row["date"])
         last_step_entry = None
         for step in steps_list:
             step_date = _parse_step_date(tl_dates.get(step["key"], ""))
@@ -437,33 +547,29 @@ def get_stats() -> dict:
             stage_entry = last_step_entry
         age = (now - stage_entry).days
         top10.append({
-            "id":      q["id"],
-            "subject": (q.get("subject") or "—")[:55],
-            "date":    str(q.get("date", ""))[:10],
+            "id":      row["id"],
+            "subject": (row["subject"] or "—")[:55],
+            "date":    str(row["date"] or "")[:10],
             "age":     age,
             "type":    rtype,
             "stage":   stage,
-            "status":  q["_status"],
+            "status":  row["status"],
         })
 
     return {
-        "total":       total,
-        "cotacoes":    cotacoes,
-        "pedidos":     pedidos,
-        "valor_total": valor_total,
-        "abertas":     abertas,
-        "fechadas":    fechadas,
-        "chart_tipos":   {"labels": list(tipos.keys()),   "data": list(tipos.values())},
-        "chart_status":  {"labels": list(statuses.keys()), "data": list(statuses.values())},
-        "chart_deptos":  {"labels": [d[0][:25] for d in top_deptos], "data": [d[1] for d in top_deptos]},
-        "chart_semanas": {"labels": week_labels, "data": week_data},
-        "chart_fornecedor": {
-            "labels":   [f[0] for f in sorted_forn],
-            "cotacoes": [f[1]["Cotação"] for f in sorted_forn],
-            "pedidos":  [f[1]["Pedido"]  for f in sorted_forn],
-        },
-        "chart_etapas": {"labels": list(etapas.keys()), "data": list(etapas.values())},
-        "top10": top10,
+        "total":            total,
+        "cotacoes":         cotacoes,
+        "pedidos":          pedidos,
+        "valor_total":      valor_total,
+        "abertas":          abertas,
+        "fechadas":         fechadas,
+        "chart_tipos":      chart_tipos,
+        "chart_status":     chart_status,
+        "chart_deptos":     chart_deptos,
+        "chart_semanas":    chart_semanas,
+        "chart_fornecedor": chart_fornecedor,
+        "chart_etapas":     chart_etapas,
+        "top10":            top10,
     }
 
 
