@@ -292,7 +292,26 @@ def save_correction(quote_id: str, subject: str, fields: dict, user: str) -> Non
 
 # ── Audit log ─────────────────────────────────────────────────────────────────
 
+def serialize_for_json(obj):
+    """Recursively convert non-JSON-serializable types to JSON-safe types."""
+    from decimal import Decimal
+    from datetime import datetime, date
+
+    if isinstance(obj, dict):
+        return {k: serialize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [serialize_for_json(item) for item in obj]
+    elif isinstance(obj, Decimal):
+        return float(obj)
+    elif isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, date):
+        return obj.isoformat()
+    return obj
+
+
 def _append_audit(quote_id: str, subject: str, changes: dict, user: str, action: str = "edit") -> None:
+    changes = serialize_for_json(changes)
     with db.get_cursor(commit=True) as cur:
         cur.execute(
             """
@@ -544,6 +563,7 @@ def save_deal(quote_id: str, subject: str, data: dict, user: str) -> None:
         old_row = cur.fetchone()
     old = dict(old_row) if old_row else {}
     changes = {k: [old.get(k), v] for k, v in data.items() if old.get(k) != v and v}
+    changes = serialize_for_json(changes)
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     max_del = data.get("max_estimated_delivery") or None
