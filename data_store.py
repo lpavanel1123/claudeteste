@@ -943,6 +943,58 @@ def delete_user(username: str) -> bool:
         return cur.rowcount > 0
 
 
+def get_cisco_spend_stats() -> dict:
+    """Aggregates (unit_net_price × qty) per product across all quotes.
+    Returns totals grouped by fornecedor, arquitetura, and department."""
+
+    def _num(s):
+        try:
+            return float(str(s or "0").strip().replace(",", ""))
+        except ValueError:
+            return 0.0
+
+    def _sort(d):
+        items = sorted(d.items(), key=lambda x: x[1], reverse=True)
+        return {"labels": [k for k, v in items], "data": [round(v, 2) for k, v in items]}
+
+    quotes      = load_extractions()
+    annotations = load_annotations()
+
+    by_fornecedor  = {}
+    by_arquitetura = {}
+    by_department  = {}
+    grand_total    = 0.0
+
+    for q in quotes:
+        ann        = annotations.get(q["id"], {})
+        fornecedor = (ann.get("fornecedor") or "").strip() or "Não informado"
+        department = (q.get("department") or "").strip() or "Não informado"
+
+        for p in (q.get("products") or []):
+            unp = _num(p.get("unit_net_price"))
+            qty = max(_num(p.get("qty") or "1"), 1)
+            if unp <= 0:
+                continue
+            value = unp * qty
+            grand_total += value
+
+            by_fornecedor[fornecedor]  = by_fornecedor.get(fornecedor, 0.0)  + value
+            by_department[department]  = by_department.get(department, 0.0)  + value
+
+            arq = (p.get("arquitetura") or "").strip() or "Não informado"
+            by_arquitetura[arq] = by_arquitetura.get(arq, 0.0) + value
+
+    return {
+        "total":           round(grand_total, 2),
+        "n_fornecedores":  len(by_fornecedor),
+        "n_arquiteturas":  len(by_arquitetura),
+        "n_departamentos": len(by_department),
+        "by_fornecedor":   _sort(by_fornecedor),
+        "by_arquitetura":  _sort(by_arquitetura),
+        "by_department":   _sort(by_department),
+    }
+
+
 def change_password(username: str, current_password: str, new_password: str) -> tuple[bool, str]:
     """Verify current password then update to new hash. Returns (ok, error_msg)."""
     user = verify_user(username, current_password)

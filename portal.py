@@ -651,7 +651,7 @@ def cisco():
     if session.get("empresa") != "Cisco":
         flash("Acesso restrito a usuários Cisco.", "danger")
         return redirect(url_for("dashboard"))
-    return render_template("cisco.html")
+    return render_template("cisco.html", stats=data_store.get_cisco_spend_stats())
 
 
 @app.route("/admin/import")

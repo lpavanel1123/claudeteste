@@ -1,12 +1,318 @@
 {% extends "base.html" %}
-{% block title %}Cisco{% endblock %}
+{% block title %}Cisco — Spend Analysis{% endblock %}
+
 {% block content %}
-<div class="d-flex flex-column align-items-center justify-content-center" style="min-height: 60vh; gap: 1.5rem;">
-  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Cisco_logo_blue_2016.svg/320px-Cisco_logo_blue_2016.svg.png"
-       alt="Cisco" style="height: 70px;">
-  <div class="text-center">
-    <h2 class="fw-light text-muted mb-1">Em construção</h2>
-    <p class="text-secondary small">Esta seção estará disponível em breve.</p>
+
+<!-- Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div class="d-flex align-items-center gap-3">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Cisco_logo_blue_2016.svg/320px-Cisco_logo_blue_2016.svg.png"
+         alt="Cisco" style="height:32px">
+    <div>
+      <h5 class="page-title mb-0">Spend Analysis</h5>
+      <small class="text-muted">Somatória de Unit Net Price × Qty por categoria</small>
+    </div>
   </div>
 </div>
+
+<!-- KPI cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card kpi-card kpi-primary bg-white h-100">
+      <div class="card-body py-3 px-3">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="text-muted mb-1" style="font-size:.72rem;font-weight:600;letter-spacing:.04em">SPEND TOTAL</div>
+            <div class="fw-bold text-cisco" style="font-size:1.3rem" id="kpi-total">—</div>
+            <div class="small text-muted mt-1">todos os itens</div>
+          </div>
+          <div class="rounded-2 p-2" style="background:rgba(0,80,115,.08)">
+            <i class="fa-solid fa-dollar-sign text-cisco" style="font-size:1.1rem"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card kpi-card bg-white h-100">
+      <div class="card-body py-3 px-3">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="text-muted mb-1" style="font-size:.72rem;font-weight:600;letter-spacing:.04em">FORNECEDORES</div>
+            <div class="fw-bold text-cisco" style="font-size:1.3rem">{{ stats.n_fornecedores }}</div>
+            <div class="small text-muted mt-1">distintos</div>
+          </div>
+          <div class="rounded-2 p-2" style="background:rgba(4,159,217,.08)">
+            <i class="fa-solid fa-building" style="font-size:1.1rem;color:#049FD9"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card kpi-card bg-white h-100">
+      <div class="card-body py-3 px-3">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="text-muted mb-1" style="font-size:.72rem;font-weight:600;letter-spacing:.04em">ARQUITETURAS</div>
+            <div class="fw-bold text-cisco" style="font-size:1.3rem">{{ stats.n_arquiteturas }}</div>
+            <div class="small text-muted mt-1">distintas</div>
+          </div>
+          <div class="rounded-2 p-2" style="background:rgba(108,192,74,.1)">
+            <i class="fa-solid fa-network-wired" style="font-size:1.1rem;color:#6cc04a"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card kpi-card bg-white h-100">
+      <div class="card-body py-3 px-3">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="text-muted mb-1" style="font-size:.72rem;font-weight:600;letter-spacing:.04em">DEPARTAMENTOS</div>
+            <div class="fw-bold text-cisco" style="font-size:1.3rem">{{ stats.n_departamentos }}</div>
+            <div class="small text-muted mt-1">distintos</div>
+          </div>
+          <div class="rounded-2 p-2" style="background:rgba(255,190,0,.1)">
+            <i class="fa-solid fa-sitemap" style="font-size:1.1rem;color:#ffbe00"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Seção 1: Fornecedor ──────────────────────────────────────────── -->
+{% set forn = stats.by_fornecedor %}
+<div class="card shadow-sm cisco-card mb-4">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="fa-solid fa-building" style="color:var(--cisco-bright)"></i>
+    Por Fornecedor
+  </div>
+  <div class="card-body">
+    {% if forn.labels %}
+    <div class="row align-items-stretch g-3">
+      <div class="col-lg-8">
+        <div style="height:{{ [forn.labels|length * 42 + 24, 140]|max }}px; max-height:420px">
+          <canvas id="chartForn"></canvas>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="table-responsive" style="max-height:420px;overflow-y:auto">
+          <table class="table table-sm align-middle mb-0 small">
+            <thead class="table-light sticky-top">
+              <tr><th>Fornecedor</th><th class="text-end">Total (USD)</th><th class="text-end">%</th></tr>
+            </thead>
+            <tbody>
+              {% for i in range(forn.labels|length) %}
+              <tr>
+                <td class="fw-semibold">{{ forn.labels[i] }}</td>
+                <td class="text-end text-muted small spend-val" data-val="{{ forn.data[i] }}">—</td>
+                <td class="text-end">
+                  <span class="badge" style="background:rgba(0,80,115,.12);color:#005073;font-size:.7rem">
+                    {{ "%.1f"|format(forn.data[i] / stats.total * 100 if stats.total > 0 else 0) }}%
+                  </span>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <p class="text-muted small mb-0">Nenhum item com Unit Net Price preenchido.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Seção 2: Arquitetura ────────────────────────────────────────── -->
+{% set arq = stats.by_arquitetura %}
+<div class="card shadow-sm cisco-card mb-4">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="fa-solid fa-network-wired" style="color:#6cc04a"></i>
+    Por Arquitetura
+  </div>
+  <div class="card-body">
+    {% if arq.labels %}
+    <div class="row align-items-stretch g-3">
+      <div class="col-lg-8">
+        <div style="height:{{ [arq.labels|length * 42 + 24, 140]|max }}px; max-height:420px">
+          <canvas id="chartArq"></canvas>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="table-responsive" style="max-height:420px;overflow-y:auto">
+          <table class="table table-sm align-middle mb-0 small">
+            <thead class="table-light sticky-top">
+              <tr><th>Arquitetura</th><th class="text-end">Total (USD)</th><th class="text-end">%</th></tr>
+            </thead>
+            <tbody>
+              {% for i in range(arq.labels|length) %}
+              <tr>
+                <td class="fw-semibold">{{ arq.labels[i] }}</td>
+                <td class="text-end text-muted small spend-val" data-val="{{ arq.data[i] }}">—</td>
+                <td class="text-end">
+                  <span class="badge" style="background:rgba(108,192,74,.12);color:#4a8f35;font-size:.7rem">
+                    {{ "%.1f"|format(arq.data[i] / stats.total * 100 if stats.total > 0 else 0) }}%
+                  </span>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <p class="text-muted small mb-0">Nenhum item com Arquitetura preenchida.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Seção 3: Departamento ───────────────────────────────────────── -->
+{% set dep = stats.by_department %}
+<div class="card shadow-sm cisco-card mb-4">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="fa-solid fa-sitemap" style="color:#ffbe00"></i>
+    Por Departamento
+  </div>
+  <div class="card-body">
+    {% if dep.labels %}
+    <div class="row align-items-stretch g-3">
+      <div class="col-lg-8">
+        <div style="height:{{ [dep.labels|length * 42 + 24, 140]|max }}px; max-height:420px">
+          <canvas id="chartDep"></canvas>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="table-responsive" style="max-height:420px;overflow-y:auto">
+          <table class="table table-sm align-middle mb-0 small">
+            <thead class="table-light sticky-top">
+              <tr><th>Departamento</th><th class="text-end">Total (USD)</th><th class="text-end">%</th></tr>
+            </thead>
+            <tbody>
+              {% for i in range(dep.labels|length) %}
+              <tr>
+                <td class="fw-semibold">{{ dep.labels[i] }}</td>
+                <td class="text-end text-muted small spend-val" data-val="{{ dep.data[i] }}">—</td>
+                <td class="text-end">
+                  <span class="badge" style="background:rgba(255,190,0,.12);color:#b38600;font-size:.7rem">
+                    {{ "%.1f"|format(dep.data[i] / stats.total * 100 if stats.total > 0 else 0) }}%
+                  </span>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <p class="text-muted small mb-0">Nenhum item com Departamento preenchido.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CISCO  = ['#005073','#049FD9','#00BCEB','#6cc04a','#ffbe00','#e2231a','#7B61FF','#FF6B35','#3d9970','#9b59b6'];
+const fmt    = n => new Intl.NumberFormat('en-US', {style:'currency', currency:'USD', maximumFractionDigits:0}).format(n);
+const fmtFull= n => new Intl.NumberFormat('en-US', {style:'currency', currency:'USD', minimumFractionDigits:2}).format(n);
+
+// KPI total
+document.getElementById('kpi-total').textContent = fmt({{ stats.total }});
+
+// Format all table cells
+document.querySelectorAll('.spend-val').forEach(el => {
+  el.textContent = fmtFull(parseFloat(el.dataset.val || 0));
+});
+
+const baseOpts = {
+  responsive: true,
+  maintainAspectRatio: false,
+  indexAxis: 'y',
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      callbacks: {
+        label: ctx => ' ' + fmtFull(ctx.parsed.x)
+      }
+    }
+  },
+  scales: {
+    x: {
+      beginAtZero: true,
+      ticks: { font: { size: 10 }, callback: v => fmt(v) },
+      grid:  { color: '#f0f0f0' }
+    },
+    y: { ticks: { font: { size: 11 } } }
+  }
+};
+
+{% if stats.by_fornecedor.labels %}
+new Chart(document.getElementById('chartForn'), {
+  type: 'bar',
+  data: {
+    labels: {{ stats.by_fornecedor.labels | tojson }},
+    datasets: [{
+      data: {{ stats.by_fornecedor.data | tojson }},
+      backgroundColor: {{ stats.by_fornecedor.labels | length | tojson }} > 1
+        ? {{ stats.by_fornecedor.labels | tojson }}.map((_, i) => CISCO[i % CISCO.length])
+        : ['#005073'],
+      borderRadius: 4,
+      borderSkipped: false,
+    }]
+  },
+  options: baseOpts
+});
+{% endif %}
+
+{% if stats.by_arquitetura.labels %}
+new Chart(document.getElementById('chartArq'), {
+  type: 'bar',
+  data: {
+    labels: {{ stats.by_arquitetura.labels | tojson }},
+    datasets: [{
+      data: {{ stats.by_arquitetura.data | tojson }},
+      backgroundColor: {{ stats.by_arquitetura.labels | tojson }}.map((_, i) => CISCO[i % CISCO.length]),
+      borderRadius: 4,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    ...baseOpts,
+    scales: {
+      ...baseOpts.scales,
+      x: { ...baseOpts.scales.x, ticks: { ...baseOpts.scales.x.ticks, color: '#4a8f35' } }
+    }
+  }
+});
+{% endif %}
+
+{% if stats.by_department.labels %}
+new Chart(document.getElementById('chartDep'), {
+  type: 'bar',
+  data: {
+    labels: {{ stats.by_department.labels | tojson }},
+    datasets: [{
+      data: {{ stats.by_department.data | tojson }},
+      backgroundColor: {{ stats.by_department.labels | tojson }}.map((_, i) => CISCO[i % CISCO.length]),
+      borderRadius: 4,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    ...baseOpts,
+    scales: {
+      ...baseOpts.scales,
+      x: { ...baseOpts.scales.x, ticks: { ...baseOpts.scales.x.ticks, color: '#b38600' } }
+    }
+  }
+});
+{% endif %}
+</script>
 {% endblock %}
