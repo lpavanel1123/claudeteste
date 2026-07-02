@@ -937,6 +937,12 @@ def create_user(username: str, password: str, role: str = "viewer",
         )
 
 
+def delete_user(username: str) -> bool:
+    with db.get_cursor(commit=True) as cur:
+        cur.execute("DELETE FROM users WHERE username = %s", (username,))
+        return cur.rowcount > 0
+
+
 def change_password(username: str, current_password: str, new_password: str) -> tuple[bool, str]:
     """Verify current password then update to new hash. Returns (ok, error_msg)."""
     user = verify_user(username, current_password)

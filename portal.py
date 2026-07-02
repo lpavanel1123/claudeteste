@@ -79,6 +79,7 @@ def login():
         if u_data:
             session["user"] = u
             session["role"] = u_data.get("role", "viewer")
+            session["empresa"] = u_data.get("empresa", "")
             return redirect(url_for("dashboard"))
         flash("Usuário ou senha incorretos.", "danger")
     return render_template("login.html")
@@ -626,6 +627,31 @@ def admin_create_user():
                            nome=nome, email=email, celular=celular, empresa=empresa)
     flash(f"Usuário '{username}' criado com sucesso!", "success")
     return redirect(url_for("admin"))
+
+
+@app.route("/admin/users/<username>/delete", methods=["POST"])
+@admin_required
+def admin_delete_user(username):
+    if session.get("role") != "owner":
+        flash("Apenas o Owner pode deletar usuários.", "danger")
+        return redirect(url_for("admin"))
+    if username == session.get("user"):
+        flash("Você não pode deletar sua própria conta.", "warning")
+        return redirect(url_for("admin"))
+    if data_store.delete_user(username):
+        flash(f"Usuário '{username}' deletado com sucesso.", "success")
+    else:
+        flash(f"Usuário '{username}' não encontrado.", "danger")
+    return redirect(url_for("admin"))
+
+
+@app.route("/cisco")
+@login_required
+def cisco():
+    if session.get("empresa") != "Cisco":
+        flash("Acesso restrito a usuários Cisco.", "danger")
+        return redirect(url_for("dashboard"))
+    return render_template("cisco.html")
 
 
 @app.route("/admin/import")

@@ -104,6 +104,13 @@
           <i class="fa-solid fa-clock-rotate-left fa-fw"></i> Histórico
         </a>
       </li>
+      {% if session.get('empresa') == 'Cisco' %}
+      <li class="nav-item">
+        <a class="nav-link {% if request.path == '/cisco' %}active{% endif %}" href="/cisco">
+          <i class="fa-solid fa-network-wired fa-fw"></i> Cisco
+        </a>
+      </li>
+      {% endif %}
       {% if session.get('role') in ('admin', 'owner') %}
       <li class="nav-item">
         <a class="nav-link admin-toggle {% if request.path.startswith('/admin') %}active{% endif %}"

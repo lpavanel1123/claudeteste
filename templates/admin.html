@@ -39,6 +39,7 @@
               <th>Empresa</th>
               <th>Role</th>
               <th>Criado em</th>
+              {% if session.get('role') == 'owner' %}<th></th>{% endif %}
             </tr>
           </thead>
           <tbody>
@@ -59,6 +60,17 @@
                 {% endif %}
               </td>
               <td class="small text-muted">{{ u.created_at or '—' }}</td>
+              {% if session.get('role') == 'owner' %}
+              <td>
+                <form method="POST"
+                      action="{{ url_for('admin_delete_user', username=u.username) }}"
+                      onsubmit="return confirm('Deletar usuário {{ u.username }}?')">
+                  <button type="submit" class="btn btn-danger btn-sm py-0 px-2">
+                    <i class="fas fa-trash fa-xs"></i>
+                  </button>
+                </form>
+              </td>
+              {% endif %}
             </tr>
             {% else %}
             <tr>
@@ -94,7 +106,13 @@
           </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold">Empresa</label>
-            <input type="text" name="empresa" class="form-control form-control-sm" placeholder="Vale S.A.">
+            <select name="empresa" class="form-select form-select-sm" required>
+              <option value="" disabled selected>Selecione a empresa...</option>
+              <option value="Cisco">Cisco</option>
+              <option value="Vale">Vale</option>
+              <option value="NTT">NTT</option>
+              <option value="Logicalis">Logicalis</option>
+            </select>
           </div>
 
           <hr class="my-3">
