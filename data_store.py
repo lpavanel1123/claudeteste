@@ -995,6 +995,61 @@ def get_cisco_spend_stats() -> dict:
     }
 
 
+def get_discount_history() -> list[dict]:
+    """Returns min/avg/max discount_pct per part_number for Logicalis and NTT."""
+    sql = """
+        WITH pd AS (
+            SELECT
+                UPPER(TRIM(p->>'part_number'))   AS part_number,
+                CASE
+                    WHEN LOWER(a.fornecedor) LIKE '%%logicalis%%' THEN 'Logicalis'
+                    WHEN LOWER(a.fornecedor) LIKE '%%ntt%%'       THEN 'NTT'
+                END AS fornecedor,
+                (p->>'discount_pct')::NUMERIC    AS discount_pct
+            FROM extractions e
+            JOIN annotations a ON e.id = a.quote_id
+            CROSS JOIN LATERAL jsonb_array_elements(e.products) AS p
+            WHERE (LOWER(a.fornecedor) LIKE '%%logicalis%%' OR LOWER(a.fornecedor) LIKE '%%ntt%%')
+              AND TRIM(COALESCE(p->>'part_number', '')) <> ''
+              AND COALESCE(p->>'discount_pct', '') <> ''
+              AND (p->>'discount_pct')::NUMERIC > 0
+        )
+        SELECT
+            part_number,
+            fornecedor,
+            ROUND(MIN(discount_pct), 2) AS min_desc,
+            ROUND(AVG(discount_pct), 2) AS avg_desc,
+            ROUND(MAX(discount_pct), 2) AS max_desc,
+            COUNT(*)                    AS ocorrencias
+        FROM pd
+        WHERE part_number <> ''
+        GROUP BY part_number, fornecedor
+        ORDER BY part_number, fornecedor
+    """
+    with db.get_cursor() as cur:
+        cur.execute(sql)
+        rows = cur.fetchall()
+
+    pivot: dict[str, dict] = {}
+    for row in rows:
+        pn   = row["part_number"]
+        forn = row["fornecedor"]
+        if pn not in pivot:
+            pivot[pn] = {"part_number": pn, "logicalis": None, "ntt": None}
+        entry = {
+            "min":   float(row["min_desc"]),
+            "avg":   float(row["avg_desc"]),
+            "max":   float(row["max_desc"]),
+            "count": int(row["ocorrencias"]),
+        }
+        if forn == "Logicalis":
+            pivot[pn]["logicalis"] = entry
+        elif forn == "NTT":
+            pivot[pn]["ntt"] = entry
+
+    return sorted(pivot.values(), key=lambda x: x["part_number"])
+
+
 def change_password(username: str, current_password: str, new_password: str) -> tuple[bool, str]:
     """Verify current password then update to new hash. Returns (ok, error_msg)."""
     user = verify_user(username, current_password)

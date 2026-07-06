@@ -1,19 +1,41 @@
 {% extends "base.html" %}
-{% block title %}Cisco — Spend Analysis{% endblock %}
+{% block title %}Cisco{% endblock %}
 
 {% block content %}
 
 <!-- Header -->
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-3">
   <div class="d-flex align-items-center gap-3">
     <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Cisco_logo_blue_2016.svg/320px-Cisco_logo_blue_2016.svg.png"
          alt="Cisco" style="height:32px">
-    <div>
-      <h5 class="page-title mb-0">Spend Analysis</h5>
-      <small class="text-muted">Somatória de Unit Net Price × Qty por categoria</small>
-    </div>
+    <h5 class="page-title mb-0">Cisco</h5>
   </div>
 </div>
+
+<!-- Sub-abas -->
+<ul class="nav nav-tabs mb-4" id="ciscoTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="tab-spend-btn" data-bs-toggle="tab"
+            data-bs-target="#tab-spend" type="button" role="tab">
+      <i class="fa-solid fa-chart-bar fa-fw me-1"></i>Spend Analysis
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-descontos-btn" data-bs-toggle="tab"
+            data-bs-target="#tab-descontos" type="button" role="tab">
+      <i class="fa-solid fa-percent fa-fw me-1"></i>Histórico de Descontos
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content" id="ciscoTabsContent">
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     ABA 1 — Spend Analysis
+     ══════════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade show active" id="tab-spend" role="tabpanel">
+
+<small class="text-muted d-block mb-3">Somatória de Unit Net Price × Qty por categoria</small>
 
 <!-- KPI cards -->
 <div class="row g-3 mb-4">
@@ -215,6 +237,84 @@
   </div>
 </div>
 
+</div><!-- /tab-pane spend -->
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     ABA 2 — Histórico de Descontos
+     ══════════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-descontos" role="tabpanel">
+
+  <div class="card shadow-sm cisco-card">
+    <div class="card-header d-flex align-items-center justify-content-between gap-2 flex-wrap">
+      <div class="d-flex align-items-center gap-2">
+        <i class="fa-solid fa-percent" style="color:var(--cisco-bright)"></i>
+        Histórico de Descontos por Part Number
+      </div>
+      <input type="search" id="discountSearch" class="form-control form-control-sm"
+             placeholder="Buscar part number…" style="max-width:220px">
+    </div>
+    <div class="card-body p-0">
+      {% if discount_history %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0 small" id="discountTable">
+          <thead class="table-light sticky-top">
+            <tr>
+              <th rowspan="2" class="align-middle border-end" style="min-width:160px">Part Number</th>
+              <th colspan="3" class="text-center border-end" style="background:rgba(0,80,115,.08);color:#005073">
+                <i class="fa-solid fa-building fa-fw"></i> Logicalis
+              </th>
+              <th colspan="3" class="text-center" style="background:rgba(4,159,217,.08);color:#0471a6">
+                <i class="fa-solid fa-building fa-fw"></i> NTT
+              </th>
+            </tr>
+            <tr>
+              <th class="text-end" style="background:rgba(0,80,115,.05)">Menor</th>
+              <th class="text-end" style="background:rgba(0,80,115,.05)">Médio</th>
+              <th class="text-end border-end" style="background:rgba(0,80,115,.05)">Maior</th>
+              <th class="text-end" style="background:rgba(4,159,217,.05)">Menor</th>
+              <th class="text-end" style="background:rgba(4,159,217,.05)">Médio</th>
+              <th class="text-end" style="background:rgba(4,159,217,.05)">Maior</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in discount_history %}
+            <tr>
+              <td class="fw-semibold border-end font-monospace" style="font-size:.8rem">{{ item.part_number }}</td>
+              {%- if item.logicalis %}
+              <td class="text-end" style="background:rgba(0,80,115,.03)">{{ "%.1f"|format(item.logicalis.min) }}%</td>
+              <td class="text-end fw-semibold" style="background:rgba(0,80,115,.03)">{{ "%.1f"|format(item.logicalis.avg) }}%</td>
+              <td class="text-end border-end" style="background:rgba(0,80,115,.03)">
+                <span class="badge" style="background:rgba(0,80,115,.12);color:#005073">{{ "%.1f"|format(item.logicalis.max) }}%</span>
+              </td>
+              {%- else %}
+              <td class="text-center text-muted" colspan="3" style="background:rgba(0,80,115,.02)">—</td>
+              {%- endif %}
+              {%- if item.ntt %}
+              <td class="text-end" style="background:rgba(4,159,217,.03)">{{ "%.1f"|format(item.ntt.min) }}%</td>
+              <td class="text-end fw-semibold" style="background:rgba(4,159,217,.03)">{{ "%.1f"|format(item.ntt.avg) }}%</td>
+              <td class="text-end" style="background:rgba(4,159,217,.03)">
+                <span class="badge" style="background:rgba(4,159,217,.15);color:#0471a6">{{ "%.1f"|format(item.ntt.max) }}%</span>
+              </td>
+              {%- else %}
+              <td class="text-center text-muted" colspan="3" style="background:rgba(4,159,217,.02)">—</td>
+              {%- endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="p-4 text-muted small">
+        Nenhum dado de desconto encontrado para Logicalis ou NTT.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div><!-- /tab-pane descontos -->
+
+</div><!-- /tab-content -->
+
 {% endblock %}
 
 {% block scripts %}
@@ -314,5 +414,17 @@ new Chart(document.getElementById('chartDep'), {
   }
 });
 {% endif %}
+
+// ── Discount table search ────────────────────────────────────────────────────
+const discountSearch = document.getElementById('discountSearch');
+if (discountSearch) {
+  discountSearch.addEventListener('input', function () {
+    const q = this.value.trim().toLowerCase();
+    document.querySelectorAll('#discountTable tbody tr').forEach(tr => {
+      const pn = tr.querySelector('td')?.textContent.toLowerCase() || '';
+      tr.style.display = pn.includes(q) ? '' : 'none';
+    });
+  });
+}
 </script>
 {% endblock %}
