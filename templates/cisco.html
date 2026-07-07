@@ -260,12 +260,14 @@
           <thead class="table-light sticky-top">
             <tr>
               <th rowspan="2" class="align-middle border-end" style="min-width:160px">Part Number</th>
+              <th rowspan="2" class="align-middle border-end text-center" style="min-width:120px">Arquitetura</th>
               <th colspan="3" class="text-center border-end" style="background:rgba(0,80,115,.08);color:#005073">
                 <i class="fa-solid fa-building fa-fw"></i> Logicalis
               </th>
-              <th colspan="3" class="text-center" style="background:rgba(4,159,217,.08);color:#0471a6">
+              <th colspan="3" class="text-center border-end" style="background:rgba(4,159,217,.08);color:#0471a6">
                 <i class="fa-solid fa-building fa-fw"></i> NTT
               </th>
+              <th rowspan="2" class="align-middle text-center" style="min-width:110px">Última Cotação</th>
             </tr>
             <tr>
               <th class="text-end" style="background:rgba(0,80,115,.05)">Menor</th>
@@ -273,13 +275,23 @@
               <th class="text-end border-end" style="background:rgba(0,80,115,.05)">Maior</th>
               <th class="text-end" style="background:rgba(4,159,217,.05)">Menor</th>
               <th class="text-end" style="background:rgba(4,159,217,.05)">Médio</th>
-              <th class="text-end" style="background:rgba(4,159,217,.05)">Maior</th>
+              <th class="text-end border-end" style="background:rgba(4,159,217,.05)">Maior</th>
             </tr>
           </thead>
           <tbody>
-            {% for item in discount_history %}
-            <tr>
-              <td class="fw-semibold border-end font-monospace" style="font-size:.8rem">{{ item.part_number }}</td>
+            {% for arq, items in discount_history | groupby('arquitetura') %}
+            <tr class="arq-group-header">
+              <td colspan="8" class="fw-bold py-1 px-3"
+                  style="background:rgba(0,80,115,.06);color:#005073;font-size:.72rem;letter-spacing:.05em;text-transform:uppercase">
+                <i class="fa-solid fa-network-wired fa-fw me-1"></i>{{ arq }}
+              </td>
+            </tr>
+            {% for item in items %}
+            <tr data-arq="{{ arq | lower }}">
+              <td class="fw-semibold border-end font-monospace ps-3" style="font-size:.8rem">{{ item.part_number }}</td>
+              <td class="border-end text-center">
+                <span class="badge" style="background:rgba(0,80,115,.1);color:#005073;font-size:.7rem">{{ item.arquitetura }}</span>
+              </td>
               {%- if item.logicalis %}
               <td class="text-end" style="background:rgba(0,80,115,.03)">{{ "%.1f"|format(item.logicalis.min) }}%</td>
               <td class="text-end fw-semibold" style="background:rgba(0,80,115,.03)">{{ "%.1f"|format(item.logicalis.avg) }}%</td>
@@ -287,18 +299,20 @@
                 <span class="badge" style="background:rgba(0,80,115,.12);color:#005073">{{ "%.1f"|format(item.logicalis.max) }}%</span>
               </td>
               {%- else %}
-              <td class="text-center text-muted" colspan="3" style="background:rgba(0,80,115,.02)">—</td>
+              <td class="text-center text-muted border-end" colspan="3" style="background:rgba(0,80,115,.02)">—</td>
               {%- endif %}
               {%- if item.ntt %}
               <td class="text-end" style="background:rgba(4,159,217,.03)">{{ "%.1f"|format(item.ntt.min) }}%</td>
               <td class="text-end fw-semibold" style="background:rgba(4,159,217,.03)">{{ "%.1f"|format(item.ntt.avg) }}%</td>
-              <td class="text-end" style="background:rgba(4,159,217,.03)">
+              <td class="text-end border-end" style="background:rgba(4,159,217,.03)">
                 <span class="badge" style="background:rgba(4,159,217,.15);color:#0471a6">{{ "%.1f"|format(item.ntt.max) }}%</span>
               </td>
               {%- else %}
-              <td class="text-center text-muted" colspan="3" style="background:rgba(4,159,217,.02)">—</td>
+              <td class="text-center text-muted border-end" colspan="3" style="background:rgba(4,159,217,.02)">—</td>
               {%- endif %}
+              <td class="text-center text-muted" style="font-size:.78rem">{{ item.ultima_cotacao or "—" }}</td>
             </tr>
+            {% endfor %}
             {% endfor %}
           </tbody>
         </table>
@@ -420,10 +434,23 @@ const discountSearch = document.getElementById('discountSearch');
 if (discountSearch) {
   discountSearch.addEventListener('input', function () {
     const q = this.value.trim().toLowerCase();
-    document.querySelectorAll('#discountTable tbody tr').forEach(tr => {
-      const pn = tr.querySelector('td')?.textContent.toLowerCase() || '';
-      tr.style.display = pn.includes(q) ? '' : 'none';
+    const tbody = document.querySelector('#discountTable tbody');
+    if (!tbody) return;
+    let lastGroupRow = null;
+    let groupHasVisible = false;
+    tbody.querySelectorAll('tr').forEach(tr => {
+      if (tr.classList.contains('arq-group-header')) {
+        if (lastGroupRow) lastGroupRow.style.display = groupHasVisible ? '' : 'none';
+        lastGroupRow = tr;
+        groupHasVisible = false;
+      } else {
+        const text = tr.textContent.toLowerCase();
+        const visible = !q || text.includes(q);
+        tr.style.display = visible ? '' : 'none';
+        if (visible) groupHasVisible = true;
+      }
     });
+    if (lastGroupRow) lastGroupRow.style.display = groupHasVisible ? '' : 'none';
   });
 }
 </script>
