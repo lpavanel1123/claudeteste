@@ -132,3 +132,14 @@ CREATE TABLE IF NOT EXISTS bot_status (
   order_errors  JSONB NOT NULL DEFAULT '{}',
   token_info    JSONB NOT NULL DEFAULT '{}'
 );
+
+-- Correlação de emails: liga Message-IDs recebidos ao registro (quote_id) correto,
+-- para que respostas/follow-ups na mesma thread atualizem em vez de duplicar.
+CREATE TABLE IF NOT EXISTS email_threads (
+  message_id   TEXT PRIMARY KEY,
+  quote_id     TEXT NOT NULL REFERENCES extractions(id) ON DELETE CASCADE,
+  in_reply_to  TEXT,
+  "references" TEXT,
+  received_at  TIMESTAMP NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_email_threads_quote ON email_threads(quote_id);

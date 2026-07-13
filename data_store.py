@@ -103,7 +103,8 @@ def get_extraction_by_id(quote_id: str):
         return _str_dates(dict(row)) if row else None
 
 
-def update_extraction_fields(quote_id: str, updates: dict, subject: str, user: str) -> bool:
+def update_extraction_fields(quote_id: str, updates: dict, subject: str, user: str,
+                              action: str = "bulk_import_update") -> bool:
     safe = {k: v for k, v in updates.items() if k in _UPDATABLE_EXTRACTION_COLS}
     if not safe:
         return False
@@ -117,7 +118,7 @@ def update_extraction_fields(quote_id: str, updates: dict, subject: str, user: s
     with db.get_cursor(commit=True) as cur:
         cur.execute(f"UPDATE extractions SET {set_clause} WHERE id = %s", params)
     if changes:
-        _append_audit(quote_id, subject, changes, user, action="bulk_import_update")
+        _append_audit(quote_id, subject, changes, user, action=action)
     return True
 
 

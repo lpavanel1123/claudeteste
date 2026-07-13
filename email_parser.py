@@ -32,6 +32,13 @@ def parse_webhook(form: dict, files: dict) -> dict:
     except Exception:
         date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    # Headers de thread — usados para correlacionar follow-ups ao mesmo registro
+    # (ver email_matcher.py). Cloudmailin nem sempre envia todos; ausência é normal
+    # e degrada para os critérios de correlação por vendor/assunto.
+    message_id = form.get("headers[message-id]", "").strip()
+    in_reply_to = form.get("headers[in-reply-to]", "").strip()
+    references = form.get("headers[references]", "").strip()
+
     body_plain = form.get("plain", "").strip()
     body_html = form.get("html", "")
 
@@ -62,6 +69,9 @@ def parse_webhook(form: dict, files: dict) -> dict:
         "body": body,
         "attachments": attachments,
         "raw_email": raw_email,
+        "message_id": message_id,
+        "in_reply_to": in_reply_to,
+        "references": references,
     }
 
 

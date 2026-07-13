@@ -8,6 +8,8 @@ import extractor
 import xls_reader
 import extractions
 import storage
+import data_store
+import email_matcher
 import config
 
 app = Flask(__name__)
@@ -62,7 +64,40 @@ def webhook():
             extracted["project_ref"] = "NA"
 
         storage.save(parsed)
-        extractions.save(parsed, extracted)
+
+        match = email_matcher.resolve(parsed)
+        quote_id = match["quote_id"]
+
+        if quote_id:
+            # Follow-up correlacionado: atualiza o registro certo em vez de duplicar.
+            safe_updates = {
+                k: v for k, v in extracted.items()
+                if k in email_matcher.MERGE_FIELDS and v and v != "NA"
+            }
+            if safe_updates:
+                data_store.update_extraction_fields(
+                    quote_id, safe_updates, parsed["subject"], "webhook",
+                    action="email_correlation_update",
+                )
+            if extracted.get("products"):
+                data_store.append_products(quote_id, parsed["subject"], extracted["products"], "webhook")
+            print(f"  [correlação] email vinculado ao quote_id existente {quote_id!r}")
+        else:
+            quote_id = extractions.save(parsed, extracted)
+
+        if match["vendor"] and (match["vendor_ref"] or match["project_code"]):
+            deal_updates = {}
+            if match["vendor_ref"]:
+                deal_key = "ntt_id" if match["vendor"] == "NTT" else "logicalis_id"
+                deal_updates[deal_key] = match["vendor_ref"]
+            if match["project_code"]:
+                deal_updates["projeto_id_vale"] = match["project_code"]
+            data_store.save_deal(quote_id, parsed["subject"], deal_updates, "webhook")
+
+        email_matcher.record_thread(
+            parsed.get("message_id", ""), quote_id,
+            parsed.get("in_reply_to", ""), parsed.get("references", ""),
+        )
 
     except Exception as exc:
         print(f"  [erro ao processar]: {exc}")

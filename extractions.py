@@ -4,8 +4,8 @@ from psycopg2.extras import Json
 import db
 
 
-def save(parsed_email: dict, extracted: dict) -> None:
-    entry_id = str(uuid.uuid4())
+def save(parsed_email: dict, extracted: dict, entry_id: str = None) -> str:
+    entry_id = entry_id or str(uuid.uuid4())
 
     with db.get_cursor(commit=True) as cur:
         cur.execute(
@@ -44,3 +44,4 @@ def save(parsed_email: dict, extracted: dict) -> None:
         )
 
     print(f"  [extractions] salvo no Postgres: {parsed_email.get('subject')!r}")
+    return entry_id
