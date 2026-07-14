@@ -62,13 +62,15 @@ def test_compute_project_value_soma_multiplos_produtos():
 # ── get_sales_forecast(): filtros de escopo (via monkeypatch dos loaders) ────
 
 def _mock_forecast_deps(monkeypatch, quotes, annotations=None, deals=None, forecasts=None,
-                         discount_history=None, vendor_avg=None):
+                         discount_history=None, vendor_avg=None, rate=(5.0, True)):
+    import fx_rate
     monkeypatch.setattr(data_store, "load_extractions", lambda: quotes)
     monkeypatch.setattr(data_store, "load_annotations", lambda: annotations or {})
     monkeypatch.setattr(data_store, "load_deals", lambda: deals or {})
     monkeypatch.setattr(data_store, "load_cisco_forecast", lambda: forecasts or {})
     monkeypatch.setattr(data_store, "get_discount_history", lambda: discount_history or [])
     monkeypatch.setattr(data_store, "_vendor_avg_discount", lambda: vendor_avg or {})
+    monkeypatch.setattr(fx_rate, "get_usd_brl_rate", lambda: rate)
 
 
 def test_get_sales_forecast_ignora_fornecedor_fora_de_ntt_logicalis(monkeypatch):
@@ -77,13 +79,30 @@ def test_get_sales_forecast_ignora_fornecedor_fora_de_ntt_logicalis(monkeypatch)
 
     result = data_store.get_sales_forecast()
 
-    assert result == []
+    assert result["items"] == []
+
+
+def test_get_sales_forecast_ignora_pedido_so_mostra_cotacao(monkeypatch):
+    """Uma vez que virou Pedido já foi bookado — sai do forecast."""
+    quotes = [
+        {"id": "q1", "request_type": "Pedido", "subject": "a", "products": []},
+        {"id": "q2", "request_type": "Cotação", "subject": "b", "products": []},
+    ]
+    annotations = {
+        "q1": {"fornecedor": "NTT", "status": "Em Aberto"},
+        "q2": {"fornecedor": "NTT", "status": "Em Aberto"},
+    }
+    _mock_forecast_deps(monkeypatch, quotes, annotations=annotations)
+
+    result = data_store.get_sales_forecast()
+
+    assert [r["quote_id"] for r in result["items"]] == ["q2"]
 
 
 def test_get_sales_forecast_exclui_perdida_e_rejeitada(monkeypatch):
     quotes = [
-        {"id": "q1", "request_type": "Pedido", "subject": "a", "products": []},
-        {"id": "q2", "request_type": "Pedido", "subject": "b", "products": []},
+        {"id": "q1", "request_type": "Cotação", "subject": "a", "products": []},
+        {"id": "q2", "request_type": "Cotação", "subject": "b", "products": []},
     ]
     annotations = {
         "q1": {"fornecedor": "NTT", "status": "Perdida"},
@@ -93,17 +112,17 @@ def test_get_sales_forecast_exclui_perdida_e_rejeitada(monkeypatch):
 
     result = data_store.get_sales_forecast()
 
-    assert [r["quote_id"] for r in result] == ["q2"]
+    assert [r["quote_id"] for r in result["items"]] == ["q2"]
 
 
 def test_get_sales_forecast_ganha_permanece_na_lista(monkeypatch):
-    quotes = [{"id": "q1", "request_type": "Pedido", "subject": "a", "products": []}]
+    quotes = [{"id": "q1", "request_type": "Cotação", "subject": "a", "products": []}]
     annotations = {"q1": {"fornecedor": "NTT", "status": "Ganha"}}
     _mock_forecast_deps(monkeypatch, quotes, annotations=annotations)
 
     result = data_store.get_sales_forecast()
 
-    assert len(result) == 1
+    assert len(result["items"]) == 1
 
 
 def test_get_sales_forecast_nome_projeto_usa_projeto_id_vale_prioritario(monkeypatch):
@@ -115,7 +134,7 @@ def test_get_sales_forecast_nome_projeto_usa_projeto_id_vale_prioritario(monkeyp
 
     result = data_store.get_sales_forecast()
 
-    assert result[0]["projeto"] == "PRJ0001234"
+    assert result["items"][0]["projeto"] == "PRJ0001234"
 
 
 def test_get_sales_forecast_nome_projeto_cai_para_assunto_normalizado(monkeypatch):
@@ -126,15 +145,46 @@ def test_get_sales_forecast_nome_projeto_cai_para_assunto_normalizado(monkeypatc
 
     result = data_store.get_sales_forecast()
 
-    assert result[0]["projeto"] == "firewall projeto - x"
+    assert result["items"][0]["projeto"] == "firewall projeto - x"
 
 
 def test_get_sales_forecast_traz_deal_id_como_did(monkeypatch):
-    quotes = [{"id": "q1", "request_type": "Pedido", "subject": "a", "products": []}]
+    quotes = [{"id": "q1", "request_type": "Cotação", "subject": "a", "products": []}]
     annotations = {"q1": {"fornecedor": "Logicalis"}}
     deals = {"q1": {"deal_id": "DEAL-999"}}
     _mock_forecast_deps(monkeypatch, quotes, annotations=annotations, deals=deals)
 
     result = data_store.get_sales_forecast()
 
-    assert result[0]["deal_id"] == "DEAL-999"
+    assert result["items"][0]["deal_id"] == "DEAL-999"
+
+
+def test_get_sales_forecast_expoe_a_cotacao_do_dolar_usada(monkeypatch):
+    quotes = [{"id": "q1", "request_type": "Cotação", "subject": "a", "products": []}]
+    annotations = {"q1": {"fornecedor": "NTT"}}
+    _mock_forecast_deps(monkeypatch, quotes, annotations=annotations, rate=(5.25, False))
+
+    result = data_store.get_sales_forecast()
+
+    assert result["fx_rate"] == 5.25
+    assert result["fx_rate_is_live"] is False
+
+
+# ── Conversão de moeda: Nacional (Real) → USD pela cotação atual ─────────────
+
+def test_compute_project_value_converte_nacional_para_usd():
+    products = [_product("PN-BR", 1000, arquitetura="Enterprise Switching")]
+    products[0]["tipo"] = "Nacional"
+
+    valor, _ = data_store._compute_project_value(products, "NTT", {}, {"NTT": 0.0}, fx_rate_value=5.0)
+
+    assert valor == 200  # R$1000 / 5.0 = USD 200, sem desconto
+
+
+def test_compute_project_value_nao_converte_importado():
+    products = [_product("PN-US", 1000, arquitetura="Enterprise Switching")]
+    products[0]["tipo"] = "Importado"
+
+    valor, _ = data_store._compute_project_value(products, "NTT", {}, {"NTT": 0.0}, fx_rate_value=5.0)
+
+    assert valor == 1000  # já está em USD, taxa não se aplica

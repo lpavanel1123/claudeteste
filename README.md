@@ -301,13 +301,21 @@ Em todos os critérios, o **domínio do remetente/destinatário** (`nttdata.com`
 
 Usuários cuja `empresa` (cadastrada em `/admin`) é `Cisco` veem uma seção interna extra, com 3 sub-abas:
 
-- **Spend Analysis** — soma de `unit_net_price × qty` por Fornecedor, Arquitetura e Departamento.
+- **Spend Analysis** — soma de `unit_net_price × qty` por Fornecedor, Arquitetura e Departamento, em USD.
 - **Histórico de Descontos** — min/médio/máximo de `discount_pct` por part number, separado por Logicalis e NTT (`data_store.get_discount_history`).
 - **Forecast de Vendas** *(novo)* — ver abaixo.
 
+### Conversão de moeda (Nacional = Real, Importado = Dólar)
+
+Produtos com Origem **"Nacional"** são cotados pelos distribuidores em **Real (BRL)**; produtos **"Importado"** já vêm em **USD**. Todo valor agregado do portal (Spend Analysis, Forecast de Vendas) é exibido em USD — o módulo `fx_rate.py` converte automaticamente os valores "Nacional" pela cotação atual do dólar antes de somar:
+
+- Busca a cotação numa API pública gratuita (`economia.awesomeapi.com.br`), com cache de 1h (evita bater na API a cada carga de página).
+- Se a busca falhar, usa a última cotação conhecida em cache; se nunca buscou com sucesso, cai num valor fixo de fallback (`fx_rate._FALLBACK_RATE`).
+- A tela sempre mostra a taxa usada (1 USD = R$ X,XX) e sinaliza com um ícone de alerta quando o valor não é o "ao vivo" (falha na API).
+
 ### Forecast de Vendas
 
-Uma linha por cotação/pedido com `fornecedor` NTT ou Logicalis (`annotations.fornecedor`) que ainda esteja em aberto — **exclui status "Perdida" e "Rejeitada"**; "Ganha" permanece na lista. Filtro NTT/Logicalis no topo da aba (client-side, tudo já vem computado do servidor numa carga só, igual às outras duas abas).
+Uma linha por **Cotação** (não Pedido — uma vez que vira Pedido já foi bookado, sai do forecast) com `fornecedor` NTT ou Logicalis (`annotations.fornecedor`) que ainda esteja em aberto — **exclui status "Perdida" e "Rejeitada"**; "Ganha" permanece na lista. Filtro NTT/Logicalis no topo da aba (client-side, tudo já vem computado do servidor numa carga só, igual às outras duas abas).
 
 Colunas:
 | Coluna | Origem |

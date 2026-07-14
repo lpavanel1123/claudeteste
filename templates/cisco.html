@@ -41,7 +41,11 @@
      ══════════════════════════════════════════════════════════════════════ -->
 <div class="tab-pane fade show active" id="tab-spend" role="tabpanel">
 
-<small class="text-muted d-block mb-3">Somatória de Unit Net Price × Qty por categoria</small>
+<small class="text-muted d-block mb-1">Somatória de Unit Net Price × Qty por categoria — tudo em USD</small>
+<small class="text-muted d-block mb-3">
+  <i class="fa-solid {{ 'fa-circle-check text-success' if stats.fx_rate_is_live else 'fa-triangle-exclamation text-warning' }} me-1"></i>
+  Produtos "Nacional" convertidos de Real pela cotação {{ 'atual' if stats.fx_rate_is_live else '(última conhecida — falha ao buscar a atual)' }}: 1 USD = R$ {{ "%.2f"|format(stats.fx_rate) }}
+</small>
 
 <!-- KPI cards -->
 <div class="row g-3 mb-4">
@@ -337,6 +341,11 @@
      ABA 3 — Forecast de Vendas
      ══════════════════════════════════════════════════════════════════════ -->
 <div class="tab-pane fade" id="tab-forecast" role="tabpanel">
+
+  <small class="text-muted d-block mb-3">
+    <i class="fa-solid {{ 'fa-circle-check text-success' if fx_rate_is_live else 'fa-triangle-exclamation text-warning' }} me-1"></i>
+    Valores em USD — produtos "Nacional" convertidos de Real pela cotação {{ 'atual' if fx_rate_is_live else '(última conhecida — falha ao buscar a atual)' }}: 1 USD = R$ {{ "%.2f"|format(fx_rate) }}
+  </small>
 
   <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
     <div class="btn-group" role="group" aria-label="Filtro de parceiro">

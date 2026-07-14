@@ -656,11 +656,14 @@ def cisco():
     if session.get("empresa") != "Cisco":
         flash("Acesso restrito a usuários Cisco.", "danger")
         return redirect(url_for("dashboard"))
+    forecast_data = data_store.get_sales_forecast()
     return render_template(
         "cisco.html",
         stats=data_store.get_cisco_spend_stats(),
         discount_history=data_store.get_discount_history(),
-        sales_forecast=data_store.get_sales_forecast(),
+        sales_forecast=forecast_data["items"],
+        fx_rate=forecast_data["fx_rate"],
+        fx_rate_is_live=forecast_data["fx_rate_is_live"],
         forecast_statuses=FORECAST_STATUSES,
     )
 

@@ -1004,8 +1004,11 @@ def delete_user(username: str) -> bool:
 
 
 def get_cisco_spend_stats() -> dict:
-    """Aggregates (unit_net_price × qty) per product across all quotes.
+    """Aggregates (unit_net_price × qty) per product across all quotes, em USD.
+    Produtos 'Nacional' são cotados em Real pelos distribuidores — convertidos
+    para USD pela cotação atual (fx_rate) antes de somar com 'Importado'.
     Returns totals grouped by fornecedor, arquitetura, and department."""
+    import fx_rate
 
     def _num(s):
         try:
@@ -1019,6 +1022,7 @@ def get_cisco_spend_stats() -> dict:
 
     quotes      = load_extractions()
     annotations = load_annotations()
+    rate, rate_is_live = fx_rate.get_usd_brl_rate()
 
     by_fornecedor  = {}
     by_arquitetura = {}
@@ -1035,7 +1039,7 @@ def get_cisco_spend_stats() -> dict:
             qty = max(_num(p.get("qty") or "1"), 1)
             if unp <= 0:
                 continue
-            value = unp * qty
+            value = fx_rate.to_usd(unp, p.get("tipo"), rate) * qty
             grand_total += value
 
             by_fornecedor[fornecedor]  = by_fornecedor.get(fornecedor, 0.0)  + value
@@ -1052,6 +1056,8 @@ def get_cisco_spend_stats() -> dict:
         "by_fornecedor":   _sort(by_fornecedor),
         "by_arquitetura":  _sort(by_arquitetura),
         "by_department":   _sort(by_department),
+        "fx_rate":         rate,
+        "fx_rate_is_live": rate_is_live,
     }
 
 
@@ -1157,11 +1163,15 @@ def _vendor_avg_discount() -> dict:
         return {r["fornecedor"]: float(r["avg_desc"]) for r in cur.fetchall() if r["fornecedor"]}
 
 
-def _compute_project_value(products: list, fornecedor: str, discount_pivot: dict, vendor_avg: dict) -> tuple:
-    """Soma unit_list_price × qty × (1 - desconto médio) por produto. Usa o
-    desconto médio do part number específico (Histórico de Descontos) quando
+def _compute_project_value(products: list, fornecedor: str, discount_pivot: dict, vendor_avg: dict,
+                            fx_rate_value: float = 0.0) -> tuple:
+    """Soma unit_list_price × qty × (1 - desconto médio) por produto, em USD.
+    Produtos 'Nacional' vêm cotados em Real pelos distribuidores — convertidos
+    para USD por fx_rate_value antes de aplicar o desconto. Usa o desconto
+    médio do part number específico (Histórico de Descontos) quando
     disponível; senão cai para a média geral do fornecedor. Retorna
     (valor_total, usou_fallback_em_algum_produto)."""
+    import fx_rate
 
     def _num(s):
         try:
@@ -1178,6 +1188,7 @@ def _compute_project_value(products: list, fornecedor: str, discount_pivot: dict
         list_price = _num(p.get("unit_list_price"))
         if not pn or list_price <= 0:
             continue
+        list_price = fx_rate.to_usd(list_price, p.get("tipo"), fx_rate_value)
         qty = _num(p.get("qty") or "1") or 1.0
         arq = (p.get("arquitetura") or "").strip() or "Não informado"
 
@@ -1239,12 +1250,15 @@ def save_cisco_forecast(quote_id: str, subject: str, data: dict, user: str) -> N
         _append_audit(quote_id, subject, changes, user, action="cisco_forecast")
 
 
-def get_sales_forecast() -> list[dict]:
-    """Forecast de vendas (área Cisco): um item por cotação/pedido com
-    fornecedor NTT ou Logicalis, ainda em aberto (exclui Perdida/Rejeitada).
-    Nome do projeto: projeto_id_vale quando existir, senão o assunto
-    normalizado (mesma limpeza usada na correlação de email)."""
+def get_sales_forecast() -> dict:
+    """Forecast de vendas (área Cisco): um item por Cotação (não Pedido — uma
+    vez que virou Pedido já foi bookado, sai do forecast) com fornecedor NTT
+    ou Logicalis, ainda em aberto (exclui Perdida/Rejeitada). Nome do projeto:
+    projeto_id_vale quando existir, senão o assunto normalizado (mesma limpeza
+    usada na correlação de email). Valor em USD — Nacional é convertido pela
+    cotação atual do dólar (fx_rate)."""
     import email_matcher
+    import fx_rate
 
     quotes      = load_extractions()
     annotations = load_annotations()
@@ -1253,10 +1267,11 @@ def get_sales_forecast() -> list[dict]:
 
     discount_pivot = {(row["part_number"], row["arquitetura"]): row for row in get_discount_history()}
     vendor_avg = _vendor_avg_discount()
+    rate, rate_is_live = fx_rate.get_usd_brl_rate()
 
-    result = []
+    items = []
     for q in quotes:
-        if q.get("request_type") not in ("Cotação", "Pedido"):
+        if q.get("request_type") != "Cotação":
             continue
         ann = annotations.get(q["id"], {})
         fornecedor = (ann.get("fornecedor") or "").strip()
@@ -1273,10 +1288,10 @@ def get_sales_forecast() -> list[dict]:
             projeto = email_matcher.normalize_subject(q.get("subject", "")) or q.get("subject", "") or "—"
 
         valor, used_fallback = _compute_project_value(
-            q.get("products", []), fornecedor, discount_pivot, vendor_avg
+            q.get("products", []), fornecedor, discount_pivot, vendor_avg, rate
         )
 
-        result.append({
+        items.append({
             "quote_id":       q["id"],
             "projeto":        projeto,
             "fornecedor":     fornecedor,
@@ -1289,8 +1304,8 @@ def get_sales_forecast() -> list[dict]:
             "status":         fc.get("status") or "Pipeline",
         })
 
-    result.sort(key=lambda r: r["valor"], reverse=True)
-    return result
+    items.sort(key=lambda r: r["valor"], reverse=True)
+    return {"items": items, "fx_rate": rate, "fx_rate_is_live": rate_is_live}
 
 
 def change_password(username: str, current_password: str, new_password: str) -> tuple[bool, str]:
