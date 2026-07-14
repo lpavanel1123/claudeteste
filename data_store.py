@@ -225,14 +225,15 @@ def save_annotation(quote_id: str, subject: str, new_data: dict, user: str) -> N
         cur.execute(
             """
             INSERT INTO annotations (quote_id, status, valor_total, responsavel_interno,
-                                     fornecedor, observacoes, updated_at, updated_by)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                     fornecedor, observacoes, entregue, updated_at, updated_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (quote_id) DO UPDATE SET
                 status              = EXCLUDED.status,
                 valor_total         = EXCLUDED.valor_total,
                 responsavel_interno = EXCLUDED.responsavel_interno,
                 fornecedor          = EXCLUDED.fornecedor,
                 observacoes         = EXCLUDED.observacoes,
+                entregue            = EXCLUDED.entregue,
                 updated_at          = EXCLUDED.updated_at,
                 updated_by          = EXCLUDED.updated_by
             """,
@@ -243,6 +244,7 @@ def save_annotation(quote_id: str, subject: str, new_data: dict, user: str) -> N
                 new_data.get("responsavel_interno", ""),
                 new_data.get("fornecedor", ""),
                 new_data.get("observacoes", ""),
+                bool(new_data.get("entregue", False)),
                 now_str,
                 user,
             ),
@@ -680,8 +682,9 @@ def save_deal(quote_id: str, subject: str, data: dict, user: str) -> None:
             """
             INSERT INTO deals (quote_id, projeto_id_vale, logicalis_id, ntt_id,
                                estimate_nacional, estimate_importado, order_id, deal_id,
-                               last_ccw_sync, max_estimated_delivery, updated_at, updated_by)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                               last_ccw_sync, max_estimated_delivery, response_received_at,
+                               updated_at, updated_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (quote_id) DO UPDATE SET
                 projeto_id_vale       = COALESCE(NULLIF(EXCLUDED.projeto_id_vale, ''),       deals.projeto_id_vale),
                 logicalis_id          = COALESCE(NULLIF(EXCLUDED.logicalis_id, ''),          deals.logicalis_id),
@@ -692,6 +695,7 @@ def save_deal(quote_id: str, subject: str, data: dict, user: str) -> None:
                 deal_id               = COALESCE(NULLIF(EXCLUDED.deal_id, ''),               deals.deal_id),
                 last_ccw_sync         = COALESCE(EXCLUDED.last_ccw_sync,                     deals.last_ccw_sync),
                 max_estimated_delivery= COALESCE(EXCLUDED.max_estimated_delivery,            deals.max_estimated_delivery),
+                response_received_at = COALESCE(EXCLUDED.response_received_at,               deals.response_received_at),
                 updated_at            = EXCLUDED.updated_at,
                 updated_by            = EXCLUDED.updated_by
             """,
@@ -706,6 +710,7 @@ def save_deal(quote_id: str, subject: str, data: dict, user: str) -> None:
                 data.get("deal_id", ""),
                 data.get("last_ccw_sync") or None,
                 max_del if max_del else None,
+                data.get("response_received_at") or None,
                 now_str,
                 user,
             ),
@@ -725,7 +730,7 @@ def load_timelines() -> dict:
                 for r in cur.fetchall()}
 
 
-def save_timeline(quote_id: str, subject: str, dates: dict, user: str) -> None:
+def save_timeline(quote_id: str, subject: str, dates: dict, user: str, action: str = "timeline") -> None:
     with db.get_cursor() as cur:
         cur.execute("SELECT dates FROM timelines WHERE quote_id = %s", (quote_id,))
         row = cur.fetchone()
@@ -745,7 +750,56 @@ def save_timeline(quote_id: str, subject: str, dates: dict, user: str) -> None:
             (quote_id, Json(dates), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user),
         )
     if changes:
-        _append_audit(quote_id, subject, changes, user, action="timeline")
+        _append_audit(quote_id, subject, changes, user, action=action)
+
+
+def check_and_advance_by_deadline(quote_id: str, subject: str, user: str) -> None:
+    """Avança 'Entrega ao Parceiro' quando o prazo previsto (CCW ou estimativa
+    calculada, vale a que estiver disponível) já passou, ou quando alguém marcou
+    a cotação como entregue manualmente (checkbox 'Entregue' em Informações
+    Manuais). Só se aplica a Pedidos — é a única etapa em jogo — e é idempotente:
+    não faz nada se a etapa já tiver data preenchida. Prazo ausente não é erro
+    (a maioria dos Pedidos ainda não tem um); prazo presente mas malformado é
+    sinalizado no histórico como pendente de revisão, sem alterar dados.
+    Chamado (1) a cada sync do bot de CCW (process_ccw_sync) e (2) ao salvar
+    Informações Manuais no portal, para refletir o checkbox na hora.
+    """
+    from datetime import date as _date
+
+    quote = get_extraction_by_id(quote_id)
+    if not quote or quote.get("request_type") != "Pedido":
+        return
+
+    dates = dict(load_timelines().get(quote_id, {}).get("dates", {}))
+    if dates.get("entrega_parceiro"):
+        return  # já avançado
+
+    entregue = bool(load_annotations().get(quote_id, {}).get("entregue", False))
+    deal = load_deals().get(quote_id, {})
+
+    forecast, _ = compute_auto_forecast(quote, {"dates": dates}, deal)
+
+    delivery_date = None
+    if forecast:
+        try:
+            forecast_date = _date.fromisoformat(str(forecast)[:10])
+        except ValueError:
+            _append_audit(
+                quote_id, subject,
+                {"_pendente_revisao": [None, f"prazo previsto inválido para avanço automático: {forecast!r}"]},
+                user, action="deadline_check_pending",
+            )
+            return
+        if entregue or forecast_date < _date.today():
+            delivery_date = forecast_date
+    elif entregue:
+        delivery_date = _date.today()
+
+    if delivery_date is None:
+        return  # sem prazo vencido e não marcado como entregue: nada a fazer
+
+    dates["entrega_parceiro"] = delivery_date.isoformat()
+    save_timeline(quote_id, subject, dates, user, action="auto_advance_deadline")
 
 
 # ── CCW Bot sync ──────────────────────────────────────────────────────────────
@@ -844,6 +898,9 @@ def process_ccw_sync(quote_id: str, subject: str, order_id: str,
     if order_id:
         deal_update["order_id"] = order_id
     save_deal(quote_id, subject, deal_update, user)
+
+    # Roda a cada sync diário do bot de CCW — ver check_and_advance_by_deadline.
+    check_and_advance_by_deadline(quote_id, subject, user)
 
     _append_audit(quote_id, subject,
                   {"ccw_sync": [None,

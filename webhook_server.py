@@ -67,6 +67,7 @@ def webhook():
 
         match = email_matcher.resolve(parsed)
         quote_id = match["quote_id"]
+        is_followup = bool(quote_id)
 
         if quote_id:
             # Follow-up correlacionado: atualiza o registro certo em vez de duplicar.
@@ -85,13 +86,20 @@ def webhook():
         else:
             quote_id = extractions.save(parsed, extracted)
 
-        if match["vendor"] and (match["vendor_ref"] or match["project_code"]):
-            deal_updates = {}
-            if match["vendor_ref"]:
-                deal_key = "ntt_id" if match["vendor"] == "NTT" else "logicalis_id"
-                deal_updates[deal_key] = match["vendor_ref"]
-            if match["project_code"]:
-                deal_updates["projeto_id_vale"] = match["project_code"]
+        deal_updates = {}
+        if match["vendor"] and match["vendor_ref"]:
+            deal_key = "ntt_id" if match["vendor"] == "NTT" else "logicalis_id"
+            deal_updates[deal_key] = match["vendor_ref"]
+        if match["project_code"]:
+            deal_updates["projeto_id_vale"] = match["project_code"]
+        if is_followup and attachment:
+            # Data de recebimento da resposta do orçamento (não confundir com a
+            # data de criação do pedido original, que fica em extractions.date):
+            # só marcamos quando o email correlacionado a uma cotação já
+            # existente vem com anexo XLS/XLSX, que é o formato real em que a
+            # resposta com produtos/preços chega hoje.
+            deal_updates["response_received_at"] = parsed["date"]
+        if deal_updates:
             data_store.save_deal(quote_id, parsed["subject"], deal_updates, "webhook")
 
         email_matcher.record_thread(

@@ -215,6 +215,20 @@ Previsão = Início de Fabricação + max(Lead Times dos produtos) + 10 dias de 
 - Uma nota discreta exibe o produto "agressor" (maior lead time) e o buffer aplicado
 - Essa mesma lógica (`data_store.compute_auto_forecast`) alimenta a tabela **Pedidos com Previsão de Entrega Após** no Dashboard
 
+### Avanço automático de "Entrega ao Parceiro"
+
+Um Pedido avança sozinho para a etapa **Entrega ao Parceiro** quando (`data_store.check_and_advance_by_deadline`):
+
+- o checkbox **Entregue** (em Informações Manuais) está marcado, **ou**
+- o prazo previsto (CCW confirmado via `deals.max_estimated_delivery`, ou a estimativa calculada acima quando não há sync de CCW) já passou.
+
+Regras:
+- É **idempotente** — só roda se a etapa ainda não tiver data preenchida.
+- A data gravada em `entrega_parceiro` é o próprio prazo previsto/estimado (não a data em que o sistema percebeu o vencimento); se o checkbox estiver marcado mas não houver nenhum prazo disponível, usa a data de hoje.
+- Se o prazo previsto existir mas estiver em formato inválido, **nada é alterado** — fica sinalizado no Histórico como `deadline_check_pending`, para revisão manual.
+- Avança só até "Entrega ao Parceiro" (não em cascata até "Entrega à Área Demandante").
+- É chamado em dois pontos: (1) a cada sync diário do bot de CCW (`process_ccw_sync`, quando `Bot-rotina/run_daily.py` faz `POST /api/v1/leadtime`) e (2) ao salvar Informações Manuais no portal, pra refletir o checkbox na hora sem esperar o próximo sync.
+
 ---
 
 ## Produtos
@@ -267,6 +281,19 @@ Três dropdowns filtram os produtos sem recarregar a página:
 | Logicalis | ✅ editável | bloqueado |
 | NTT | bloqueado | ✅ editável |
 | Outros / vazio | ✅ editável | ✅ editável |
+
+### Correlação e extração automática de emails (`email_matcher.py`)
+
+O webhook não cria mais um registro novo pra cada email recebido — antes de salvar, tenta correlacionar o email a uma cotação já existente, nesta ordem:
+
+1. **Thread** (`Message-ID`/`In-Reply-To`/`References`, tabela `email_threads`) — se o Cloudmailin enviar esses headers.
+2. **ID já atribuído pelo vendor**: `NTT#####` (assunto ou corpo — a NTT costuma declarar "ID NTT da sua solicitação é: NTT#####") vira `deals.ntt_id`; `ETC ####` (assunto) vira `deals.logicalis_id` (mesmo campo — "ETC" é a convenção de ID da Logicalis).
+3. **Código de projeto Vale**: prioriza `PRJ######` sobre `P0######` quando ambos aparecem no assunto/corpo → `deals.projeto_id_vale`.
+4. **Nome do projeto normalizado** (assunto sem `Re:`/`Fwd:`/`Enc:`/`Res:`/prefixo de vendor/sufixo `- ETC ####`) — só como fallback, sempre restrito ao mesmo vendor.
+
+Em todos os critérios, o **domínio do remetente/destinatário** (`nttdata.com`/`global.ntt` = NTT, `logicalis.com` = Logicalis — nunca o envelope/Return-Path, que pode ser um relay) funciona como trava: um email de um vendor nunca atualiza o registro de outro vendor. Sem nenhuma correlação confiável, cria um registro novo (nunca mescla no escuro).
+
+`deals.response_received_at` é gravado quando um email correlacionado (não o primeiro da cotação) chega com anexo XLS/XLSX — hoje é assim que a resposta com produtos/preços chega de fato. Ainda não há extração de produtos de tabela dentro do corpo do email (sem exemplo real pra validar o parser).
 
 ---
 

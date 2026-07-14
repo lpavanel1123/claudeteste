@@ -147,6 +147,14 @@
               <option value="Outros"    {% if forn_atual not in ('Logicalis', 'NTT', '') %}selected{% endif %}>Outros</option>
             </select>
           </div>
+          <div class="mb-3 form-check">
+            <input type="checkbox" class="form-check-input" id="entregue" name="entregue" value="1"
+              {% if ann.get('entregue') %}checked{% endif %}>
+            <label class="form-check-label small fw-semibold" for="entregue">
+              Entregue
+              <span class="text-muted fw-normal">(avança automaticamente para "Entrega ao Parceiro")</span>
+            </label>
+          </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold">Observações</label>
             <textarea name="observacoes" class="form-control form-control-sm" rows="4">{{ ann.get('observacoes','') }}</textarea>

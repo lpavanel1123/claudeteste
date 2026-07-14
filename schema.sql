@@ -44,11 +44,14 @@ CREATE TABLE IF NOT EXISTS annotations (
   responsavel_interno  TEXT,
   fornecedor           TEXT,
   observacoes          TEXT,
+  entregue             BOOLEAN NOT NULL DEFAULT FALSE,
   updated_at           TIMESTAMP,
   updated_by           TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_annotations_status ON annotations(status);
 CREATE INDEX IF NOT EXISTS idx_annotations_fornecedor ON annotations(fornecedor);
+-- Idempotente para bancos onde a tabela já existia antes deste campo:
+ALTER TABLE annotations ADD COLUMN IF NOT EXISTS entregue BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS corrections (
   quote_id  TEXT PRIMARY KEY REFERENCES extractions(id) ON DELETE CASCADE,
@@ -73,9 +76,12 @@ CREATE TABLE IF NOT EXISTS deals (
   deal_id                 TEXT,
   last_ccw_sync           TIMESTAMP,
   max_estimated_delivery  DATE,
+  response_received_at    TIMESTAMP,
   updated_at              TIMESTAMP,
   updated_by              TEXT
 );
+-- Idempotente para bancos onde a tabela já existia antes deste campo:
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS response_received_at TIMESTAMP;
 
 CREATE TABLE IF NOT EXISTS ccw_validations (
   id                      SERIAL PRIMARY KEY,

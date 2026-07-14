@@ -587,8 +587,12 @@ def quote_edit(quote_id):
         "responsavel_interno": request.form.get("responsavel_interno", "").strip(),
         "fornecedor":         request.form.get("fornecedor", "").strip(),
         "observacoes":        request.form.get("observacoes", "").strip(),
+        "entregue":           request.form.get("entregue") == "1",
     }
     data_store.save_annotation(quote_id, quote.get("subject", ""), new_data, session["user"])
+    # Reflete o checkbox "Entregue" (ou um prazo já vencido) na etapa imediatamente,
+    # sem esperar o próximo sync do bot de CCW.
+    data_store.check_and_advance_by_deadline(quote_id, quote.get("subject", ""), session["user"])
     flash("Cotação atualizada com sucesso!", "success")
     return redirect(url_for("quote_detail", quote_id=quote_id))
 
