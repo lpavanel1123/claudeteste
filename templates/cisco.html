@@ -26,6 +26,12 @@
       <i class="fa-solid fa-percent fa-fw me-1"></i>Histórico de Descontos
     </button>
   </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-forecast-btn" data-bs-toggle="tab"
+            data-bs-target="#tab-forecast" type="button" role="tab">
+      <i class="fa-solid fa-chart-line fa-fw me-1"></i>Forecast de Vendas
+    </button>
+  </li>
 </ul>
 
 <div class="tab-content" id="ciscoTabsContent">
@@ -327,7 +333,135 @@
 
 </div><!-- /tab-pane descontos -->
 
+<!-- ══════════════════════════════════════════════════════════════════════
+     ABA 3 — Forecast de Vendas
+     ══════════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-forecast" role="tabpanel">
+
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div class="btn-group" role="group" aria-label="Filtro de parceiro">
+      <input type="radio" class="btn-check" name="fornForecast" id="ff-ntt" autocomplete="off" checked>
+      <label class="btn btn-outline-primary btn-sm" for="ff-ntt">NTT</label>
+      <input type="radio" class="btn-check" name="fornForecast" id="ff-logicalis" autocomplete="off">
+      <label class="btn btn-outline-primary btn-sm" for="ff-logicalis">Logicalis</label>
+    </div>
+    <div class="text-end">
+      <div class="text-muted" style="font-size:.72rem;font-weight:600;letter-spacing:.04em">VALOR TOTAL (FILTRO ATUAL)</div>
+      <div class="fw-bold text-cisco" style="font-size:1.2rem" id="forecast-total">—</div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm cisco-card">
+    <div class="card-header d-flex align-items-center gap-2">
+      <i class="fa-solid fa-chart-line" style="color:var(--cisco-bright)"></i>
+      Forecast de Vendas por Projeto
+      <span class="text-muted small fw-normal ms-2">Valor = Price List × (1 − desconto médio)</span>
+    </div>
+    <div class="card-body p-0">
+      {% if sales_forecast %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0 small" id="forecastTable">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-3">Projeto</th>
+              <th class="text-end">Valor do Projeto</th>
+              <th>Data de Booking</th>
+              <th>DID</th>
+              <th>Líder Técnico/Compra</th>
+              <th>PM</th>
+              <th>Status</th>
+              <th class="text-center">—</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in sales_forecast %}
+            <tr data-fornecedor="{{ item.fornecedor | lower }}" data-valor="{{ item.valor }}">
+              <td class="ps-3 fw-semibold">{{ item.projeto }}</td>
+              <td class="text-end forecast-val" data-val="{{ item.valor }}">
+                —
+                {% if item.valor_fallback %}
+                <i class="fa-solid fa-circle-info text-muted ms-1" style="font-size:.7rem"
+                   title="Algum part number sem histórico específico — usou a média geral do fornecedor"></i>
+                {% endif %}
+              </td>
+              <td>{{ item.booking_date or "—" }}</td>
+              <td>{{ item.deal_id or "—" }}</td>
+              <td>{{ item.tech_lead or "—" }}</td>
+              <td>{{ item.pm_name or "—" }}</td>
+              <td>
+                <span class="badge" style="background:rgba(0,80,115,.1);color:#005073">{{ item.status }}</span>
+              </td>
+              <td class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        onclick="openForecastEdit(this)"
+                        data-quote-id="{{ item.quote_id }}"
+                        data-booking="{{ item.booking_date }}"
+                        data-lead="{{ item.tech_lead }}"
+                        data-pm="{{ item.pm_name }}"
+                        data-status="{{ item.status }}">
+                  <i class="fa fa-pen"></i>
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="p-4 text-muted small">
+        Nenhuma cotação/pedido com fornecedor NTT ou Logicalis em aberto no momento.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div><!-- /tab-pane forecast -->
+
 </div><!-- /tab-content -->
+
+<!-- Modal de edição do Forecast -->
+<div class="modal fade" id="forecastEditModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="POST" id="forecastEditForm" action="">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title"><i class="fa-solid fa-chart-line me-2"></i>Editar Forecast</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Data de Booking</label>
+            <input type="date" name="booking_date" id="fe-booking" class="form-control form-control-sm">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Líder Técnico/Compra</label>
+            <input type="text" name="tech_lead" id="fe-lead" class="form-control form-control-sm">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">PM</label>
+            <input type="text" name="pm_name" id="fe-pm" class="form-control form-control-sm">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Status</label>
+            <select name="status" id="fe-status" class="form-select form-select-sm">
+              {% for s in forecast_statuses %}
+              <option value="{{ s }}">{{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-1">
+            <label class="form-label small fw-semibold">DID (Deal ID)</label>
+            <p class="small text-muted mb-0">Edite em "IDs &amp; Estimates" no detalhe da cotação — aparece aqui automaticamente.</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-sm btn-cisco">Salvar</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
 
 {% endblock %}
 
@@ -428,6 +562,39 @@ new Chart(document.getElementById('chartDep'), {
   }
 });
 {% endif %}
+
+// ── Forecast de Vendas: filtro de parceiro + total + modal de edição ───────────
+function filterForecast(forn) {
+  let total = 0;
+  document.querySelectorAll('#forecastTable tbody tr[data-fornecedor]').forEach(tr => {
+    const match = tr.dataset.fornecedor === forn;
+    tr.style.display = match ? '' : 'none';
+    if (match) total += parseFloat(tr.dataset.valor || 0);
+  });
+  const el = document.getElementById('forecast-total');
+  if (el) el.textContent = fmtFull(total);
+}
+
+document.querySelectorAll('.forecast-val').forEach(el => {
+  el.firstChild.textContent = fmtFull(parseFloat(el.dataset.val || 0)) + ' ';
+});
+
+const ffNtt = document.getElementById('ff-ntt');
+const ffLog = document.getElementById('ff-logicalis');
+if (ffNtt) {
+  ffNtt.addEventListener('change', () => filterForecast('ntt'));
+  ffLog.addEventListener('change', () => filterForecast('logicalis'));
+  filterForecast('ntt'); // estado inicial, combina com o rádio marcado
+}
+
+function openForecastEdit(btn) {
+  document.getElementById('forecastEditForm').action = '/cisco/forecast/' + btn.dataset.quoteId;
+  document.getElementById('fe-booking').value = btn.dataset.booking || '';
+  document.getElementById('fe-lead').value = btn.dataset.lead || '';
+  document.getElementById('fe-pm').value = btn.dataset.pm || '';
+  document.getElementById('fe-status').value = btn.dataset.status || 'Pipeline';
+  new bootstrap.Modal(document.getElementById('forecastEditModal')).show();
+}
 
 // ── Discount table search ────────────────────────────────────────────────────
 const discountSearch = document.getElementById('discountSearch');

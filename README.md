@@ -297,6 +297,35 @@ Em todos os critérios, o **domínio do remetente/destinatário** (`nttdata.com`
 
 ---
 
+## Área Cisco (`/cisco`, visível apenas para `empresa == "Cisco"`)
+
+Usuários cuja `empresa` (cadastrada em `/admin`) é `Cisco` veem uma seção interna extra, com 3 sub-abas:
+
+- **Spend Analysis** — soma de `unit_net_price × qty` por Fornecedor, Arquitetura e Departamento.
+- **Histórico de Descontos** — min/médio/máximo de `discount_pct` por part number, separado por Logicalis e NTT (`data_store.get_discount_history`).
+- **Forecast de Vendas** *(novo)* — ver abaixo.
+
+### Forecast de Vendas
+
+Uma linha por cotação/pedido com `fornecedor` NTT ou Logicalis (`annotations.fornecedor`) que ainda esteja em aberto — **exclui status "Perdida" e "Rejeitada"**; "Ganha" permanece na lista. Filtro NTT/Logicalis no topo da aba (client-side, tudo já vem computado do servidor numa carga só, igual às outras duas abas).
+
+Colunas:
+| Coluna | Origem |
+|---|---|
+| Nome do Projeto | `deals.projeto_id_vale` quando existir; senão o assunto normalizado (mesma limpeza de `email_matcher.normalize_subject`) |
+| Valor do Projeto | calculado (ver abaixo) |
+| Data de Booking | manual, nova tabela `cisco_forecast` |
+| DID | reaproveita `deals.deal_id` (mesmo campo de "IDs & Estimates" — não duplicado) |
+| Líder Técnico/Compra | manual, `cisco_forecast.tech_lead` |
+| PM | manual, `cisco_forecast.pm_name` |
+| Status | manual, `cisco_forecast.status` — categorias de forecast comercial: `Commit` / `Best Case` / `Pipeline` / `Upside` (independente do status operacional da cotação) |
+
+**Cálculo do Valor do Projeto** (`data_store._compute_project_value`): para cada produto, `unit_list_price × qty × (1 − desconto médio)`. O desconto médio usado é o **por part number + fornecedor** já calculado no Histórico de Descontos; quando o part number ainda não tem histórico (comum em projetos novos, ainda não fechados), cai para a **média geral de desconto do fornecedor** (todos os part numbers) — esses itens ficam marcados com um ícone de aviso na tabela.
+
+Booking Date / Líder Técnico / PM / Status são editados num modal (botão de lápis na linha), que salva via `POST /cisco/forecast/<quote_id>` — mesmo gate de acesso da página.
+
+---
+
 ## Dashboard — Seção Operacional
 
 - **Cotações e Pedidos por Fornecedor** — barras agrupadas

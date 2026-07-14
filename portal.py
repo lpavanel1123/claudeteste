@@ -11,6 +11,7 @@ app = Flask(__name__)
 app.secret_key = config.PORTAL_SECRET_KEY or "dev-only-change-me"
 
 STATUSES = ["Em Aberto", "Em Análise", "Aprovada", "Rejeitada", "Ganha", "Perdida"]
+FORECAST_STATUSES = data_store.FORECAST_STATUSES
 
 _IMPORT_COLS = (
     "id", "subject", "request_type", "project_type", "project_ref",
@@ -659,7 +660,29 @@ def cisco():
         "cisco.html",
         stats=data_store.get_cisco_spend_stats(),
         discount_history=data_store.get_discount_history(),
+        sales_forecast=data_store.get_sales_forecast(),
+        forecast_statuses=FORECAST_STATUSES,
     )
+
+
+@app.route("/cisco/forecast/<quote_id>", methods=["POST"])
+@login_required
+def cisco_forecast_save(quote_id):
+    if session.get("empresa") != "Cisco":
+        return "Acesso restrito a usuários Cisco.", 403
+    quote = next((q for q in data_store.load_extractions() if q["id"] == quote_id), None)
+    if not quote:
+        return "Cotação não encontrada", 404
+
+    data = {
+        "booking_date": request.form.get("booking_date", "").strip(),
+        "tech_lead":    request.form.get("tech_lead", "").strip(),
+        "pm_name":      request.form.get("pm_name", "").strip(),
+        "status":       request.form.get("status", "Pipeline").strip(),
+    }
+    data_store.save_cisco_forecast(quote_id, quote.get("subject", ""), data, session["user"])
+    flash("Forecast atualizado.", "success")
+    return redirect(url_for("cisco") + "#tab-forecast")
 
 
 @app.route("/admin/import")

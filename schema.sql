@@ -149,3 +149,16 @@ CREATE TABLE IF NOT EXISTS email_threads (
   received_at  TIMESTAMP NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_email_threads_quote ON email_threads(quote_id);
+
+-- Forecast de vendas (área Cisco): campos manuais por cotação/pedido, um por
+-- projeto NTT ou Logicalis. Valor do projeto e nome do projeto não são
+-- armazenados aqui — são calculados sob demanda (ver data_store.get_sales_forecast).
+CREATE TABLE IF NOT EXISTS cisco_forecast (
+  quote_id      TEXT PRIMARY KEY REFERENCES extractions(id) ON DELETE CASCADE,
+  booking_date  DATE,
+  tech_lead     TEXT,
+  pm_name       TEXT,
+  status        VARCHAR(32) NOT NULL DEFAULT 'Pipeline',
+  updated_at    TIMESTAMP,
+  updated_by    TEXT
+);

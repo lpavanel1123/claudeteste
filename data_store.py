@@ -24,6 +24,8 @@ DEAL_FIELDS = [
     {"key": "deal_id",               "label": "Deal ID"},
 ]
 
+FORECAST_STATUSES = ["Commit", "Best Case", "Pipeline", "Upside"]
+
 TIMELINE_STEPS = {
     "Cotação": [
         {"key": "solicitacao_orcamento", "label": "Solicitação de Orçamento",    "icon": "fa-envelope"},
@@ -1129,6 +1131,166 @@ def get_discount_history() -> list[dict]:
         rec["ultima_cotacao"] = dt.strftime("%d/%m/%Y") if dt else None
 
     return sorted(pivot.values(), key=lambda x: (x["arquitetura"], x["part_number"]))
+
+
+def _vendor_avg_discount() -> dict:
+    """Desconto médio geral por fornecedor (todos os part numbers), usado como
+    fallback em get_sales_forecast quando um part number específico ainda não
+    tem histórico de desconto (comum em projetos de forecast ainda não fechados)."""
+    sql = """
+        SELECT
+            CASE
+                WHEN LOWER(a.fornecedor) LIKE '%%logicalis%%' THEN 'Logicalis'
+                WHEN LOWER(a.fornecedor) LIKE '%%ntt%%'       THEN 'NTT'
+            END AS fornecedor,
+            ROUND(AVG((p->>'discount_pct')::NUMERIC), 2) AS avg_desc
+        FROM extractions e
+        JOIN annotations a ON e.id = a.quote_id
+        CROSS JOIN LATERAL jsonb_array_elements(e.products) AS p
+        WHERE (LOWER(a.fornecedor) LIKE '%%logicalis%%' OR LOWER(a.fornecedor) LIKE '%%ntt%%')
+          AND COALESCE(p->>'discount_pct', '') <> ''
+          AND (p->>'discount_pct')::NUMERIC > 0
+        GROUP BY 1
+    """
+    with db.get_cursor() as cur:
+        cur.execute(sql)
+        return {r["fornecedor"]: float(r["avg_desc"]) for r in cur.fetchall() if r["fornecedor"]}
+
+
+def _compute_project_value(products: list, fornecedor: str, discount_pivot: dict, vendor_avg: dict) -> tuple:
+    """Soma unit_list_price × qty × (1 - desconto médio) por produto. Usa o
+    desconto médio do part number específico (Histórico de Descontos) quando
+    disponível; senão cai para a média geral do fornecedor. Retorna
+    (valor_total, usou_fallback_em_algum_produto)."""
+
+    def _num(s):
+        try:
+            return float(str(s or "0").strip().replace(",", ""))
+        except ValueError:
+            return 0.0
+
+    forn_key = fornecedor.lower()
+    total = 0.0
+    used_fallback = False
+
+    for p in products or []:
+        pn = str(p.get("part_number") or "").strip().upper()
+        list_price = _num(p.get("unit_list_price"))
+        if not pn or list_price <= 0:
+            continue
+        qty = _num(p.get("qty") or "1") or 1.0
+        arq = (p.get("arquitetura") or "").strip() or "Não informado"
+
+        row = discount_pivot.get((pn, arq))
+        entry = row.get(forn_key) if row else None
+        if entry and entry.get("avg") is not None:
+            desconto = entry["avg"]
+        else:
+            desconto = vendor_avg.get(fornecedor)
+            used_fallback = True
+        if desconto is None:
+            desconto = 0.0
+            used_fallback = True
+
+        total += list_price * qty * (1 - desconto / 100)
+
+    return round(total, 2), used_fallback
+
+
+def load_cisco_forecast() -> dict:
+    with db.get_cursor() as cur:
+        cur.execute("SELECT * FROM cisco_forecast")
+        return {r["quote_id"]: _str_dates(dict(r)) for r in cur.fetchall()}
+
+
+def save_cisco_forecast(quote_id: str, subject: str, data: dict, user: str) -> None:
+    with db.get_cursor() as cur:
+        cur.execute("SELECT * FROM cisco_forecast WHERE quote_id = %s", (quote_id,))
+        old = dict(cur.fetchone() or {})
+    changes = {k: [old.get(k), v] for k, v in data.items() if old.get(k) != v}
+    changes = serialize_for_json(changes)
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO cisco_forecast (quote_id, booking_date, tech_lead, pm_name,
+                                        status, updated_at, updated_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (quote_id) DO UPDATE SET
+                booking_date = EXCLUDED.booking_date,
+                tech_lead    = EXCLUDED.tech_lead,
+                pm_name      = EXCLUDED.pm_name,
+                status       = EXCLUDED.status,
+                updated_at   = EXCLUDED.updated_at,
+                updated_by   = EXCLUDED.updated_by
+            """,
+            (
+                quote_id,
+                data.get("booking_date") or None,
+                data.get("tech_lead", ""),
+                data.get("pm_name", ""),
+                data.get("status") or "Pipeline",
+                now_str,
+                user,
+            ),
+        )
+    if changes:
+        _append_audit(quote_id, subject, changes, user, action="cisco_forecast")
+
+
+def get_sales_forecast() -> list[dict]:
+    """Forecast de vendas (área Cisco): um item por cotação/pedido com
+    fornecedor NTT ou Logicalis, ainda em aberto (exclui Perdida/Rejeitada).
+    Nome do projeto: projeto_id_vale quando existir, senão o assunto
+    normalizado (mesma limpeza usada na correlação de email)."""
+    import email_matcher
+
+    quotes      = load_extractions()
+    annotations = load_annotations()
+    deals       = load_deals()
+    forecasts   = load_cisco_forecast()
+
+    discount_pivot = {(row["part_number"], row["arquitetura"]): row for row in get_discount_history()}
+    vendor_avg = _vendor_avg_discount()
+
+    result = []
+    for q in quotes:
+        if q.get("request_type") not in ("Cotação", "Pedido"):
+            continue
+        ann = annotations.get(q["id"], {})
+        fornecedor = (ann.get("fornecedor") or "").strip()
+        if fornecedor not in ("NTT", "Logicalis"):
+            continue
+        if ann.get("status") in ("Perdida", "Rejeitada"):
+            continue
+
+        deal = deals.get(q["id"], {})
+        fc   = forecasts.get(q["id"], {})
+
+        projeto = (deal.get("projeto_id_vale") or "").strip()
+        if not projeto:
+            projeto = email_matcher.normalize_subject(q.get("subject", "")) or q.get("subject", "") or "—"
+
+        valor, used_fallback = _compute_project_value(
+            q.get("products", []), fornecedor, discount_pivot, vendor_avg
+        )
+
+        result.append({
+            "quote_id":       q["id"],
+            "projeto":        projeto,
+            "fornecedor":     fornecedor,
+            "valor":          valor,
+            "valor_fallback": used_fallback,
+            "deal_id":        deal.get("deal_id", ""),
+            "booking_date":   fc.get("booking_date", "") or "",
+            "tech_lead":      fc.get("tech_lead", "") or "",
+            "pm_name":        fc.get("pm_name", "") or "",
+            "status":         fc.get("status") or "Pipeline",
+        })
+
+    result.sort(key=lambda r: r["valor"], reverse=True)
+    return result
 
 
 def change_password(username: str, current_password: str, new_password: str) -> tuple[bool, str]:
