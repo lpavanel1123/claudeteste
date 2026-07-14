@@ -126,7 +126,11 @@
       </thead>
       <tbody>
         {% if not quotes %}
-          <tr><td colspan="{{ 10 if is_owner else 9 }}" class="text-center text-muted py-4">Nenhuma cotação encontrada.</td></tr>
+          <tr><td colspan="{{ 10 if is_owner else 9 }}">
+            <div class="empty-state">
+              <i class="fa-solid fa-inbox empty-icon"></i>Nenhuma cotação encontrada.
+            </div>
+          </td></tr>
         {% endif %}
         {% for q in quotes %}
         <tr onclick="location.href='/quotes/{{ q.id }}'" style="cursor:pointer" class="quote-row" data-id="{{ q.id }}">

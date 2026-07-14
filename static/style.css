@@ -47,6 +47,12 @@ body    { background: var(--bg); color: var(--text); }
   width: 4px; height: 28px; background: var(--cisco-bright);
   border-radius: 2px; display: inline-block; margin-right: 10px;
 }
+.brand-badge {
+  width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--cisco), var(--cisco-bright));
+  color: #fff; font-size: .78rem;
+}
 
 /* ── Sidebar ── */
 .sidebar {
@@ -145,11 +151,21 @@ body    { background: var(--bg); color: var(--text); }
 .field-value { font-size: .9rem; font-weight: 500; word-break: break-word; }
 
 /* ── Login ── */
+.login-bg {
+  background:
+    radial-gradient(circle at 15% 20%, rgba(4,159,217,.18), transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(0,188,235,.14), transparent 45%),
+    var(--cisco-nav);
+}
 .login-card { max-width: 420px; border: 1px solid var(--border) !important; border-radius: 12px !important; box-shadow: 0 8px 32px rgba(0,0,0,.1) !important; }
 .login-logo-bar { width: 48px; height: 4px; background: var(--cisco-bright); border-radius: 2px; margin: 0 auto .75rem; }
 
 /* ── Page title ── */
 .page-title { font-size: 1.15rem; font-weight: 700; color: var(--text); }
+
+/* ── Empty states ── */
+.empty-state { text-align: center; padding: 2rem 1rem; color: var(--muted); }
+.empty-state i.empty-icon { font-size: 1.6rem; opacity: .3; display: block; margin-bottom: .5rem; }
 
 /* ── Misc ── */
 .navbar-brand { font-weight: 700; letter-spacing: .01em; font-size: .95rem; }

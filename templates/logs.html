@@ -43,7 +43,11 @@
       </thead>
       <tbody>
         {% if not logs %}
-          <tr><td colspan="5" class="text-center text-muted py-4">Nenhum registro encontrado.</td></tr>
+          <tr><td colspan="5">
+            <div class="empty-state">
+              <i class="fa-solid fa-clock-rotate-left empty-icon"></i>Nenhum registro encontrado.
+            </div>
+          </td></tr>
         {% endif %}
         {% for lg in logs %}
         {% set is_delete = lg.get('action') == 'delete' %}
@@ -51,16 +55,33 @@
           <td class="text-nowrap small text-muted">{{ lg.timestamp }}</td>
           <td><span class="badge bg-primary">{{ lg.user }}</span></td>
           <td>
+            {% set action = lg.get('action') %}
             {% if is_delete %}
               <span class="badge bg-danger"><i class="fa fa-trash me-1"></i>excluído</span>
-            {% elif lg.get('action') == 'bulk_import_create' %}
-              <span class="badge bg-info text-dark">importado</span>
-            {% elif lg.get('action') == 'products_edit' %}
-              <span class="badge bg-warning text-dark">produtos</span>
-            {% elif lg.get('action') == 'products_append' %}
-              <span class="badge bg-warning text-dark">produtos+</span>
+            {% elif action in ('bulk_import_create', 'bulk_import_update') %}
+              <span class="badge bg-info text-dark"><i class="fa fa-file-import me-1"></i>importado</span>
+            {% elif action == 'products_edit' %}
+              <span class="badge bg-warning text-dark"><i class="fa fa-boxes-stacked me-1"></i>produtos</span>
+            {% elif action == 'products_append' %}
+              <span class="badge bg-warning text-dark"><i class="fa fa-plus me-1"></i>produtos+</span>
+            {% elif action == 'email_correlation_update' %}
+              <span class="badge bg-primary"><i class="fa fa-envelope-circle-check me-1"></i>email</span>
+            {% elif action == 'auto_advance_deadline' %}
+              <span class="badge" style="background:#6cc04a"><i class="fa fa-forward me-1"></i>auto-avanço</span>
+            {% elif action == 'deadline_check_pending' %}
+              <span class="badge bg-warning text-dark"><i class="fa fa-triangle-exclamation me-1"></i>pendente</span>
+            {% elif action == 'ccw_sync' %}
+              <span class="badge" style="background:#049FD9"><i class="fa fa-rotate me-1"></i>CCW sync</span>
+            {% elif action == 'deal' %}
+              <span class="badge bg-secondary"><i class="fa fa-id-card me-1"></i>IDs</span>
+            {% elif action == 'timeline' %}
+              <span class="badge bg-secondary"><i class="fa fa-route me-1"></i>timeline</span>
+            {% elif action == 'correction' %}
+              <span class="badge bg-secondary"><i class="fa fa-pen me-1"></i>correção</span>
+            {% elif action == 'cisco_forecast' %}
+              <span class="badge" style="background:#005073"><i class="fa fa-chart-line me-1"></i>forecast</span>
             {% else %}
-              <span class="badge bg-secondary">edição</span>
+              <span class="badge bg-secondary"><i class="fa fa-pen me-1"></i>edição</span>
             {% endif %}
           </td>
           <td>

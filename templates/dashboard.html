@@ -68,25 +68,25 @@
 <div class="row g-3">
   <div class="col-md-6">
     <div class="card chart-card shadow-sm">
-      <div class="card-header">Tipo de Solicitação</div>
+      <div class="card-header"><i class="fa-solid fa-tags me-2" style="color:var(--cisco-bright)"></i>Tipo de Solicitação</div>
       <div class="card-body" style="height:250px"><canvas id="chartTipo"></canvas></div>
     </div>
   </div>
   <div class="col-md-6">
     <div class="card chart-card shadow-sm">
-      <div class="card-header">Status das Cotações</div>
+      <div class="card-header"><i class="fa-solid fa-list-check me-2" style="color:var(--cisco-bright)"></i>Status das Cotações</div>
       <div class="card-body" style="height:250px"><canvas id="chartStatus"></canvas></div>
     </div>
   </div>
   <div class="col-md-6">
     <div class="card chart-card shadow-sm">
-      <div class="card-header">Top Departamentos</div>
+      <div class="card-header"><i class="fa-solid fa-sitemap me-2" style="color:var(--cisco-bright)"></i>Top Departamentos</div>
       <div class="card-body" style="height:250px"><canvas id="chartDeptos"></canvas></div>
     </div>
   </div>
   <div class="col-md-6">
     <div class="card chart-card shadow-sm">
-      <div class="card-header">Volume por Semana (últimas 8)</div>
+      <div class="card-header"><i class="fa-solid fa-chart-column me-2" style="color:var(--cisco-bright)"></i>Volume por Semana (últimas 8)</div>
       <div class="card-body" style="height:250px"><canvas id="chartSemanas"></canvas></div>
     </div>
   </div>
@@ -101,13 +101,13 @@
 <div class="row g-3">
   <div class="col-md-6">
     <div class="card chart-card shadow-sm">
-      <div class="card-header">Cotações e Pedidos por Fornecedor</div>
+      <div class="card-header"><i class="fa-solid fa-building me-2" style="color:var(--cisco-bright)"></i>Cotações e Pedidos por Fornecedor</div>
       <div class="card-body" style="height:280px"><canvas id="chartFornecedor"></canvas></div>
     </div>
   </div>
   <div class="col-md-6">
     <div class="card chart-card shadow-sm">
-      <div class="card-header">Volume por Etapa do Processo</div>
+      <div class="card-header"><i class="fa-solid fa-diagram-project me-2" style="color:var(--cisco-bright)"></i>Volume por Etapa do Processo</div>
       <div class="card-body" style="height:280px"><canvas id="chartEtapas"></canvas></div>
     </div>
   </div>
@@ -243,7 +243,7 @@ function buildAll(s) {
       <td><span class="fw-bold" style="color:${r.age>60?'#e2231a':r.age>30?'#ffbe00':'#6cc04a'}">${r.age}d</span></td>
       <td class="text-muted small">${r.stage}</td>
       <td><span class="badge" style="background:${STATUS_COLOR[r.status]||'#aaa'}22;color:${STATUS_COLOR[r.status]||'#aaa'}">${r.status}</span></td>
-    </tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted py-3">Nenhum item ativo</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="6"><div class="empty-state py-3"><i class="fa-solid fa-circle-check empty-icon"></i>Nenhum item ativo</div></td></tr>';
 }
 
 function updateKPIs(s) {
@@ -266,7 +266,7 @@ function renderForecast(rows) {
       <td class="text-muted">${r.fornecedor}</td>
       <td><span class="badge" style="background:${STATUS_COLOR_FC[r.status]||'#aaa'}22;color:${STATUS_COLOR_FC[r.status]||'#aaa'}">${r.status}</span></td>
       <td class="text-muted">${r.forecast.split('-').reverse().join('/')}</td>
-    </tr>`).join('') || '<tr><td colspan="4" class="text-center text-muted py-3">Nenhum pedido encontrado</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="4"><div class="empty-state py-3"><i class="fa-solid fa-truck empty-icon"></i>Nenhum pedido encontrado</div></td></tr>';
 }
 
 async function loadForecast() {
