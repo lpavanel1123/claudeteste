@@ -20,11 +20,33 @@ _IMPORT_COLS = (
     "status", "valor_total", "responsavel_interno", "fornecedor", "observacoes",
     "projeto_id_vale", "logicalis_id", "ntt_id",
     "estimate_nacional", "estimate_importado", "order_id", "deal_id",
+    "date", "response_received_at",
 )
 _IMPORT_COL_WIDTHS = (
     12, 42, 18, 22, 15, 24, 22, 22, 18, 24, 18,
     20, 16, 24, 15, 32, 18, 18, 15, 18, 20, 15, 15,
+    18, 20,
 )
+
+# 'date' guarda 'YYYY-MM-DD[ HH:MM:SS]' internamente; aceitamos também DD/MM/YYYY
+# na planilha (formato mais comum de digitação manual no Brasil).
+_IMPORT_DATE_FORMATS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y %H:%M:%S", "%d/%m/%Y")
+
+
+def _parse_import_date(raw: str) -> str:
+    """Normaliza uma data vinda da planilha (célula de data do Excel já vem
+    como 'YYYY-MM-DD...' via str(); texto solto pode vir em DD/MM/YYYY).
+    Retorna 'YYYY-MM-DD HH:MM:SS', ou '' se vazio/não reconhecido (nunca
+    lança — planilha com data inválida não deve travar a linha inteira)."""
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    for fmt in _IMPORT_DATE_FORMATS:
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+    return ""
 
 
 @app.template_filter("date_br")
@@ -750,6 +772,8 @@ def admin_import_template():
         "",                              # estimate_importado
         "",                              # order_id
         "",                              # deal_id
+        "15/06/2026",                    # date (Data da Solicitação)
+        "20/06/2026",                    # response_received_at (Resposta da Cotação)
     ]
     for idx, val in enumerate(example, 1):
         cell = ws.cell(2, idx, val)
@@ -853,6 +877,14 @@ def admin_import_upload():
 
         deal_data = {k: row.get(k, "") for k in deal_keys}
         deal_clean = {k: v for k, v in deal_data.items() if v}
+
+        parsed_date = _parse_import_date(row.get("date", ""))
+        if parsed_date:
+            extract_fields["date"] = parsed_date  # só entra se preenchida — nunca apaga a data existente
+
+        resp_date = _parse_import_date(row.get("response_received_at", ""))
+        if resp_date:
+            deal_clean["response_received_at"] = resp_date
 
         # Resolve which existing quote to update (if any)
         matched_id = None

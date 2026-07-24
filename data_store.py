@@ -46,7 +46,7 @@ TIMELINE_STEPS = {
 _UPDATABLE_EXTRACTION_COLS = {
     "subject", "request_type", "project_type", "requester_name", "department",
     "recipient", "cnpj", "smart_account", "smart_account_domain", "virtual_account",
-    "project_ref", "is_manual", "is_bulk_import",
+    "project_ref", "is_manual", "is_bulk_import", "date",
 }
 
 

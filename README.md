@@ -352,7 +352,7 @@ Criação de usuários com username, senha (hash pbkdf2:sha256) e role: `admin` 
 
 ### Importar Cotações batch (`/admin/import`)
 
-**Passo 1** — Baixar template (`GET /admin/import/template`) → `.xlsx` com 23 colunas e dropdowns de validação.
+**Passo 1** — Baixar template (`GET /admin/import/template`) → `.xlsx` com 25 colunas e dropdowns de validação. As duas últimas (`date` = Data da Solicitação, `response_received_at` = Resposta da Cotação) ficam no final da planilha de propósito — assim as validações de dropdown das colunas do meio (por letra fixa: C, D, L, O) não precisam ser recalculadas.
 
 **Passo 2** — Upload (`POST /admin/import/upload`) — lógica de match:
 
@@ -363,6 +363,8 @@ Criação de usuários com username, senha (hash pbkdf2:sha256) e role: `admin` 
 | 3º | `logicalis_id` |
 | 4º | `ntt_id` |
 | — | Cria novo registro |
+
+`date` e `response_received_at` aceitam `DD/MM/AAAA` ou `AAAA-MM-DD` (`portal._parse_import_date`); célula de data nativa do Excel também funciona. Vazio nunca apaga um valor já existente — em criação, `date` vazia usa a data de hoje; em atualização, `date`/`response_received_at` vazios simplesmente não são tocados.
 
 ---
 

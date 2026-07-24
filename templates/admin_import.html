@@ -33,6 +33,8 @@
           Cada linha representa uma cotação. Para <strong>atualizar</strong> um registro existente,
           preencha a coluna <code>id</code> com o ID exibido no portal.
           Deixe <code>id</code> vazio para <strong>criar</strong> um registro novo.
+          As colunas <code>date</code> e <code>response_received_at</code> aceitam datas em
+          <strong>DD/MM/AAAA</strong> ou <strong>AAAA-MM-DD</strong>; deixe em branco se não souber.
         </p>
         <a href="/admin/import/template" class="btn btn-cisco">
           <i class="fa fa-file-excel me-2"></i>Baixar Template (.xlsx)
@@ -113,6 +115,8 @@
             <tr><td class="text-muted">21</td><td><code>estimate_importado</code></td><td>Estimate Importado</td><td>Texto livre</td><td class="text-center">—</td></tr>
             <tr><td class="text-muted">22</td><td><code>order_id</code></td><td>Order ID</td><td>Texto livre</td><td class="text-center">—</td></tr>
             <tr><td class="text-muted">23</td><td><code>deal_id</code></td><td>Deal ID</td><td>Texto livre</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">24</td><td><code>date</code></td><td>Data da Solicitação</td><td>DD/MM/AAAA — vazio mantém a data atual (criação) ou a já existente (atualização)</td><td class="text-center">—</td></tr>
+            <tr><td class="text-muted">25</td><td><code>response_received_at</code></td><td>Resposta da Cotação</td><td>DD/MM/AAAA — data em que a resposta do fornecedor foi recebida</td><td class="text-center">—</td></tr>
           </tbody>
         </table>
       </div>
