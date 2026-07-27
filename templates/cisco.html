@@ -388,7 +388,10 @@
               <td class="ps-3 fw-semibold">{{ item.projeto }}</td>
               <td class="text-end forecast-val" data-val="{{ item.valor }}">
                 —
-                {% if item.valor_fallback %}
+                {% if item.valor_origem == 'valor_total' %}
+                <i class="fa-solid fa-file-invoice-dollar text-muted ms-1" style="font-size:.7rem"
+                   title="Sem produtos cadastrados — usou o Valor Total (US$) de Informações Manuais"></i>
+                {% elif item.valor_fallback %}
                 <i class="fa-solid fa-circle-info text-muted ms-1" style="font-size:.7rem"
                    title="Algum part number sem histórico específico — usou a média geral do fornecedor"></i>
                 {% endif %}

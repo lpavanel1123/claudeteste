@@ -159,6 +159,47 @@ def test_get_sales_forecast_traz_deal_id_como_did(monkeypatch):
     assert result["items"][0]["deal_id"] == "DEAL-999"
 
 
+def test_get_sales_forecast_sem_produtos_usa_valor_total(monkeypatch):
+    """Cotação importada em lote (sem XLS de produtos) — cai pro Valor Total
+    manual (Informações Manuais), que já é digitado em US$ (sem conversão,
+    diferente dos produtos Nacional que são digitados em R$)."""
+    quotes = [{"id": "q1", "request_type": "Cotação", "subject": "a", "products": []}]
+    annotations = {"q1": {"fornecedor": "Logicalis", "valor_total": 607790.32}}
+    _mock_forecast_deps(monkeypatch, quotes, annotations=annotations, rate=(5.0, True))
+
+    result = data_store.get_sales_forecast()
+
+    assert result["items"][0]["valor"] == 607790.32
+    assert result["items"][0]["valor_origem"] == "valor_total"
+
+
+def test_get_sales_forecast_com_produtos_nao_usa_valor_total(monkeypatch):
+    """Havendo produto com valor > 0, o Valor Total manual é ignorado —
+    o cálculo por produto é sempre mais preciso quando disponível."""
+    quotes = [{
+        "id": "q1", "request_type": "Cotação", "subject": "a",
+        "products": [{"part_number": "PN-A", "unit_list_price": 1000, "qty": 1, "arquitetura": "Outros"}],
+    }]
+    annotations = {"q1": {"fornecedor": "NTT", "valor_total": 999999}}
+    _mock_forecast_deps(monkeypatch, quotes, annotations=annotations, vendor_avg={"NTT": 0.0})
+
+    result = data_store.get_sales_forecast()
+
+    assert result["items"][0]["valor"] == 1000
+    assert result["items"][0]["valor_origem"] == "produtos"
+
+
+def test_get_sales_forecast_sem_produtos_e_sem_valor_total_fica_zero(monkeypatch):
+    quotes = [{"id": "q1", "request_type": "Cotação", "subject": "a", "products": []}]
+    annotations = {"q1": {"fornecedor": "Logicalis"}}
+    _mock_forecast_deps(monkeypatch, quotes, annotations=annotations)
+
+    result = data_store.get_sales_forecast()
+
+    assert result["items"][0]["valor"] == 0.0
+    assert result["items"][0]["valor_origem"] == "produtos"
+
+
 def test_get_sales_forecast_expoe_a_cotacao_do_dolar_usada(monkeypatch):
     quotes = [{"id": "q1", "request_type": "Cotação", "subject": "a", "products": []}]
     annotations = {"q1": {"fornecedor": "NTT"}}

@@ -1510,7 +1510,8 @@ def get_sales_forecast() -> dict:
     ou Logicalis, ainda em aberto (exclui Perdida/Rejeitada). Nome do projeto:
     projeto_id_vale quando existir, senão o assunto normalizado (mesma limpeza
     usada na correlação de email). Valor em USD — Nacional é convertido pela
-    cotação atual do dólar (fx_rate)."""
+    cotação atual do dólar (fx_rate); sem produtos, cai para o Valor Total
+    manual (já digitado em US$, sem precisar de conversão)."""
     import email_matcher
     import fx_rate
 
@@ -1545,12 +1546,23 @@ def get_sales_forecast() -> dict:
             q.get("products", []), fornecedor, discount_pivot, vendor_avg, rate
         )
 
+        # Sem produto nenhum contribuindo (comum em cotações importadas em lote,
+        # sem XLS de produtos) — cai para o Valor Total manual (Informações
+        # Manuais), que já é digitado em US$ — não precisa de conversão.
+        valor_origem = "produtos"
+        if valor <= 0:
+            valor_total_usd = ann.get("valor_total")
+            if valor_total_usd:
+                valor = round(float(valor_total_usd), 2)
+                valor_origem = "valor_total"
+
         items.append({
             "quote_id":       q["id"],
             "projeto":        projeto,
             "fornecedor":     fornecedor,
             "valor":          valor,
             "valor_fallback": used_fallback,
+            "valor_origem":   valor_origem,
             "deal_id":        deal.get("deal_id", ""),
             "booking_date":   fc.get("booking_date", "") or "",
             "tech_lead":      fc.get("tech_lead", "") or "",

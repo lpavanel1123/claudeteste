@@ -361,6 +361,8 @@ Colunas:
 
 **Cálculo do Valor do Projeto** (`data_store._compute_project_value`): para cada produto, `unit_list_price × qty × (1 − desconto médio)`. O desconto médio usado é o **por part number + fornecedor** já calculado no Histórico de Descontos; quando o part number ainda não tem histórico (comum em projetos novos, ainda não fechados), cai para a **média geral de desconto do fornecedor** (todos os part numbers) — esses itens ficam marcados com um ícone de aviso na tabela.
 
+**Sem produtos cadastrados** (comum em cotações importadas em lote, sem XLS de produtos): cai para o **Valor Total** manual de Informações Manuais — já digitado em **US$** (não precisa de conversão). Esses itens ficam marcados com um ícone diferente (`item.valor_origem == "valor_total"`), já que o valor não passa pelo desconto médio (o Valor Total já é considerado o total final, não um preço de lista).
+
 Booking Date / Líder Técnico / PM / Status são editados num modal (botão de lápis na linha), que salva via `POST /cisco/forecast/<quote_id>` — mesmo gate de acesso da página.
 
 ---

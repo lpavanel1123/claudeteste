@@ -129,11 +129,11 @@
       <div class="card-body">
         <form method="POST" action="/quotes/{{ quote.id }}/edit" id="form-manual-edit">
           <div class="mb-3">
-            <label class="form-label small fw-semibold">Valor Total (R$)</label>
+            <label class="form-label small fw-semibold">Valor Total (US$)</label>
             <div class="input-group input-group-sm">
-              <span class="input-group-text">R$</span>
+              <span class="input-group-text">US$</span>
               <input type="text" name="valor_total" class="form-control"
-                placeholder="0,00"
+                placeholder="0.00"
                 value="{{ ann.valor_total if ann.valor_total is not none and ann.valor_total != '' else '' }}">
             </div>
           </div>
