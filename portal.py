@@ -827,6 +827,47 @@ def admin_delete_user(username):
     return redirect(url_for("admin"))
 
 
+# Matriz de permissões por role — espelho dos guards reais das rotas
+# (login_required / admin_required / owner_required + gate empresa == "Cisco").
+# Atualize aqui ao criar rota com guard novo.
+PERMISSIONS_MATRIX = [
+    {"perm": "Dashboard, pendências, busca e logs",                 "viewer": True,  "admin": True,  "owner": True,  "obs": ""},
+    {"perm": "Ver cotações e exportar CSV",                         "viewer": True,  "admin": True,  "owner": True,  "obs": ""},
+    {"perm": "Criar/editar cotações, produtos, timeline e deals",   "viewer": True,  "admin": True,  "owner": True,  "obs": ""},
+    {"perm": "Favoritar cotações",                                  "viewer": True,  "admin": True,  "owner": True,  "obs": ""},
+    {"perm": "Área Cisco (Spend, Descontos, Forecast)",             "viewer": True,  "admin": True,  "owner": True,  "obs": "Requer empresa = Cisco"},
+    {"perm": "Editar Forecast de Vendas",                           "viewer": True,  "admin": True,  "owner": True,  "obs": "Requer empresa = Cisco"},
+    {"perm": "Administração — ver e criar usuários",                "viewer": False, "admin": True,  "owner": True,  "obs": ""},
+    {"perm": "Importar cotações em lote",                           "viewer": False, "admin": True,  "owner": True,  "obs": ""},
+    {"perm": "Observabilidade e status do bot",                     "viewer": False, "admin": True,  "owner": True,  "obs": ""},
+    {"perm": "Gestão de duplicatas",                                "viewer": False, "admin": True,  "owner": True,  "obs": ""},
+    {"perm": "Deletar cotações",                                    "viewer": False, "admin": False, "owner": True,  "obs": ""},
+    {"perm": "Deletar usuários",                                    "viewer": False, "admin": False, "owner": True,  "obs": ""},
+    {"perm": "Ver esta página de permissões",                       "viewer": False, "admin": False, "owner": True,  "obs": ""},
+]
+
+
+@app.route("/admin/permissions")
+@login_required
+def admin_permissions():
+    if session.get("role") != "owner":
+        flash("Acesso restrito ao Owner.", "danger")
+        return redirect(url_for("dashboard"))
+    users = data_store.list_users_safe()
+    groups = {}
+    for u in users:
+        key = (u.get("role") or "viewer", u.get("empresa") or "—")
+        groups.setdefault(key, []).append(u)
+    grouped_users = [
+        {"role": role, "empresa": empresa, "users": members}
+        for (role, empresa), members in sorted(
+            groups.items(),
+            key=lambda kv: ({"owner": 0, "admin": 1, "viewer": 2}.get(kv[0][0], 3), kv[0][1]),
+        )
+    ]
+    return render_template("admin_permissions.html", matrix=PERMISSIONS_MATRIX, grouped_users=grouped_users)
+
+
 @app.route("/cisco")
 @login_required
 def cisco():
@@ -839,6 +880,8 @@ def cisco():
         stats=data_store.get_cisco_spend_stats(),
         discount_history=data_store.get_discount_history(),
         sales_forecast=forecast_data["items"],
+        forecast_by_department=forecast_data["by_department"],
+        forecast_by_architecture=forecast_data["by_architecture"],
         fx_rate=forecast_data["fx_rate"],
         fx_rate_is_live=forecast_data["fx_rate_is_live"],
         forecast_statuses=FORECAST_STATUSES,
@@ -860,6 +903,16 @@ def cisco_forecast_save(quote_id):
         "tech_lead":    request.form.get("tech_lead", "").strip(),
         "pm_name":      request.form.get("pm_name", "").strip(),
         "status":       request.form.get("status", "Pipeline").strip(),
+        "projeto_capital":       request.form.get("projeto_capital") == "on",
+        "kec":                   request.form.get("kec") == "on",
+        "vbm":                   request.form.get("vbm") == "on",
+        "projeto_obsolescencia": request.form.get("projeto_obsolescencia") == "on",
+        "prioridade_quarter":    request.form.get("prioridade_quarter") == "on",
+        "proxima_acao":          request.form.get("proxima_acao", "").strip(),
+        "proxima_acao_data":     request.form.get("proxima_acao_data", "").strip(),
+        "economic_buyer":        request.form.get("economic_buyer", "").strip(),
+        "champion":              request.form.get("champion", "").strip(),
+        "competition":           request.form.get("competition", "").strip(),
     }
     data_store.save_cisco_forecast(quote_id, quote.get("subject", ""), data, session["user"])
     flash("Forecast atualizado.", "success")

@@ -19,6 +19,11 @@
   <li class="nav-item">
     <a class="nav-link active" href="/admin/duplicates"><i class="fa fa-clone me-1"></i>Duplicatas</a>
   </li>
+  {% if session.get('role') == 'owner' %}
+  <li class="nav-item">
+    <a class="nav-link" href="/admin/permissions"><i class="fa fa-user-lock me-1"></i>Permissões</a>
+  </li>
+  {% endif %}
 </ul>
 
 <div class="card shadow-sm cisco-card">

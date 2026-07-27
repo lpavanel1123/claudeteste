@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Permissões — Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-3">
+  <h5 class="page-title mb-0"><i class="fa fa-shield-halved me-2 text-cisco"></i>Administração</h5>
+  <span class="badge bg-cisco text-white ms-1" style="font-size:.7rem">Admin</span>
+</div>
+<ul class="nav nav-tabs mb-4">
+  <li class="nav-item">
+    <a class="nav-link" href="/admin"><i class="fa fa-users me-1"></i>Usuários</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="/admin/import"><i class="fa fa-file-excel me-1"></i>Importar Cotações</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="/admin/observability"><i class="fa fa-heart-pulse me-1"></i>Observabilidade</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="/admin/duplicates"><i class="fa fa-clone me-1"></i>Duplicatas</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link active" href="/admin/permissions"><i class="fa fa-user-lock me-1"></i>Permissões</a>
+  </li>
+</ul>
+
+<div class="row g-4">
+
+  <!-- Matriz Role × Permissão -->
+  <div class="col-lg-7">
+    <div class="card shadow-sm cisco-card">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="fa fa-table-cells text-muted"></i>
+        <span class="fw-semibold">Matriz de Permissões por Role</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0 small">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-3">Permissão</th>
+              <th class="text-center">viewer</th>
+              <th class="text-center">admin</th>
+              <th class="text-center">owner</th>
+              <th>Observação</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in matrix %}
+            <tr>
+              <td class="ps-3">{{ row.perm }}</td>
+              {% for role in ['viewer', 'admin', 'owner'] %}
+              <td class="text-center">
+                {% if row[role] %}
+                <i class="fa-solid fa-circle-check" style="color:#6cc04a"></i>
+                {% else %}
+                <i class="fa-solid fa-circle-minus text-muted" style="opacity:.35"></i>
+                {% endif %}
+              </td>
+              {% endfor %}
+              <td class="small text-muted">{{ row.obs }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-footer small text-muted">
+        As permissões são definidas no código por role (mais o vínculo de empresa para a área Cisco) —
+        esta página é uma visualização, não um editor.
+      </div>
+    </div>
+  </div>
+
+  <!-- Usuários por grupo (role + empresa) -->
+  <div class="col-lg-5">
+    <div class="card shadow-sm cisco-card">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="fa fa-users-gear text-muted"></i>
+        <span class="fw-semibold">Usuários por Grupo</span>
+        <span class="text-muted small fw-normal ms-1">role + empresa</span>
+      </div>
+      <div class="card-body p-0">
+        {% for group in grouped_users %}
+        <div class="px-3 py-2 border-bottom" style="background:rgba(0,80,115,.04)">
+          {% if group.role == 'owner' %}
+          <span class="badge" style="background:#6f42c1;color:#fff">owner</span>
+          {% elif group.role == 'admin' %}
+          <span class="badge" style="background:var(--cisco-bright);color:#fff">admin</span>
+          {% else %}
+          <span class="badge bg-secondary">viewer</span>
+          {% endif %}
+          <span class="small text-muted ms-2"><i class="fa fa-building fa-fw me-1"></i>{{ group.empresa }}</span>
+          <span class="badge bg-light text-muted border ms-2">{{ group.users | length }}</span>
+        </div>
+        <ul class="list-unstyled mb-0">
+          {% for u in group.users %}
+          <li class="px-3 py-2 border-bottom d-flex justify-content-between align-items-center">
+            <div>
+              <span class="fw-semibold small">{{ u.nome or u.username }}</span>
+              <code class="small text-muted ms-1">{{ u.username }}</code>
+            </div>
+            <span class="small text-muted">{{ u.email or '' }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="p-4 text-muted small">Nenhum usuário cadastrado.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

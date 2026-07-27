@@ -2,13 +2,101 @@
 {% block title %}Cisco{% endblock %}
 
 {% block content %}
+<div class="meraki">
+
+<style>
+/* ── Meraki (Magnetic) look — escopo restrito à página Cisco ─────────────── */
+.meraki {
+  --mk-navy:   #0d274d;
+  --mk-navy2:  #1b4a7a;
+  --mk-green:  #67b346;
+  --mk-blue:   #049FD9;
+  --mk-amber:  #ffbe00;
+  --mk-red:    #e2231a;
+  --mk-border: #e4eaef;
+  --mk-ink:    #1f2d3d;
+  --mk-muted:  #68788c;
+  --mk-bg-soft:#f7f9fa;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--mk-ink);
+}
+.mk-hero {
+  background: linear-gradient(120deg, var(--mk-navy) 0%, var(--mk-navy2) 55%, #0d6e8c 100%);
+  border-radius: 14px; padding: 1.1rem 1.4rem; color: #fff;
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.mk-hero h5 { color: #fff; margin: 0; font-weight: 700; letter-spacing: .01em; }
+.mk-hero .mk-hero-sub { color: rgba(255,255,255,.75); font-size: .78rem; }
+.mk-logo-chip { background: #fff; border-radius: 10px; padding: .4rem .65rem; display: flex; align-items: center; }
+.meraki .nav-tabs { border: none; gap: .45rem; }
+.meraki .nav-tabs .nav-link {
+  border: 1px solid var(--mk-border); border-radius: 999px; background: #fff;
+  padding: .42rem 1.05rem; font-size: .84rem; font-weight: 600; color: var(--mk-muted);
+}
+.meraki .nav-tabs .nav-link:hover { color: var(--mk-navy); border-color: #c9d4dd; }
+.meraki .nav-tabs .nav-link.active { background: var(--mk-navy); border-color: var(--mk-navy); color: #fff; }
+.meraki .card { border: 1px solid var(--mk-border); border-radius: 12px; box-shadow: 0 1px 3px rgba(13,39,77,.06); }
+.meraki .card-header {
+  background: #fff; border-bottom: 1px solid var(--mk-border); font-weight: 600;
+  border-radius: 12px 12px 0 0 !important; font-size: .9rem;
+}
+.meraki .kpi-card { border-left: 3px solid var(--mk-blue); }
+.meraki .table thead th, .meraki .table thead.table-light th {
+  font-size: .67rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--mk-muted); background: var(--mk-bg-soft); border-bottom: 1px solid var(--mk-border);
+}
+.meraki .table tbody tr:hover { background: #f4f9fc; }
+.meraki #forecastTable td { padding-top: .6rem; padding-bottom: .6rem; }
+.meraki a.mk-proj-link { color: var(--mk-navy); font-weight: 600; text-decoration: none; }
+.meraki a.mk-proj-link:hover { color: var(--mk-blue); text-decoration: underline; }
+.mk-chip { display: inline-block; border-radius: 999px; padding: .13rem .5rem; font-size: .64rem; font-weight: 600; line-height: 1.25; white-space: nowrap; }
+.mk-chip-capital { background: rgba(4,159,217,.12);  color: #0471a6; }
+.mk-chip-kec     { background: rgba(123,97,255,.13); color: #5a43d6; }
+.mk-chip-vbm     { background: rgba(0,188,235,.15);  color: #00758f; }
+.mk-chip-obso    { background: rgba(255,190,0,.18);  color: #8a6d00; }
+.mk-chip-prio    { background: rgba(226,35,26,.1);   color: #b71c14; }
+.mk-status { display: inline-block; border-radius: 999px; padding: .2rem .62rem; font-size: .7rem; font-weight: 600; }
+.mk-status-commit   { background: rgba(103,179,70,.16); color: #3f7d26; }
+.mk-status-best     { background: rgba(4,159,217,.14);  color: #036a91; }
+.mk-status-pipeline { background: rgba(104,120,140,.13); color: #4d5d70; }
+.mk-status-upside   { background: rgba(255,190,0,.2);   color: #8a6d00; }
+.mk-score { display: inline-block; border-radius: 999px; padding: .18rem .55rem; font-size: .68rem; font-weight: 700; }
+.mk-score-high { background: rgba(103,179,70,.16); color: #3f7d26; }
+.mk-score-mid  { background: rgba(255,190,0,.2);   color: #8a6d00; }
+.mk-score-low  { background: rgba(226,35,26,.1);   color: #b71c14; }
+.meraki .mk-overdue { color: var(--mk-red) !important; font-weight: 600; }
+.mk-stage-chip {
+  border: 1px solid var(--mk-border); border-radius: 999px; background: #fff;
+  padding: .28rem .8rem; font-size: .74rem; font-weight: 600; color: var(--mk-muted); cursor: pointer;
+}
+.mk-stage-chip.active { color: #fff; }
+.mk-stage-chip.active[data-stage="Commit"]    { background: var(--mk-green); border-color: var(--mk-green); }
+.mk-stage-chip.active[data-stage="Best Case"] { background: var(--mk-blue);  border-color: var(--mk-blue); }
+.mk-stage-chip.active[data-stage="Pipeline"]  { background: #68788c;         border-color: #68788c; }
+.mk-stage-chip.active[data-stage="Upside"]    { background: #d9a400;         border-color: #d9a400; }
+.mk-tile { background: #fff; border: 1px solid var(--mk-border); border-radius: 12px; padding: .6rem .95rem; min-width: 170px; }
+.mk-tile .mk-tile-label { font-size: .66rem; font-weight: 700; letter-spacing: .06em; color: var(--mk-muted); text-transform: uppercase; }
+.mk-tile .mk-tile-value { font-size: 1.15rem; font-weight: 700; color: var(--mk-navy); }
+.mk-tile-green .mk-tile-value { color: #3f7d26; }
+.meraki .btn-check:checked + .btn-outline-primary,
+.meraki .btn-outline-primary:hover { background: var(--mk-navy); border-color: var(--mk-navy); color: #fff; }
+.meraki .btn-outline-primary { border-color: var(--mk-border); color: var(--mk-muted); font-weight: 600; }
+.mk-next-action { max-width: 220px; font-size: .78rem; }
+.mk-updated { font-size: .66rem; color: var(--mk-muted); }
+</style>
 
 <!-- Header -->
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="mk-hero">
   <div class="d-flex align-items-center gap-3">
-    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Cisco_logo_blue_2016.svg/320px-Cisco_logo_blue_2016.svg.png"
-         alt="Cisco" style="height:32px">
-    <h5 class="page-title mb-0">Cisco</h5>
+    <div class="mk-logo-chip">
+      <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Cisco_logo_blue_2016.svg/320px-Cisco_logo_blue_2016.svg.png"
+           alt="Cisco" style="height:26px">
+    </div>
+    <div>
+      <h5>Cisco</h5>
+      <div class="mk-hero-sub">Spend · Descontos · Forecast de Vendas</div>
+    </div>
   </div>
 </div>
 
@@ -347,20 +435,43 @@
     Valores em USD — produtos "Nacional" convertidos de Real pela cotação {{ 'atual' if fx_rate_is_live else '(última conhecida — falha ao buscar a atual)' }}: 1 USD = R$ {{ "%.2f"|format(fx_rate) }}
   </small>
 
-  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-    <div class="btn-group" role="group" aria-label="Filtro de parceiro">
-      <input type="radio" class="btn-check" name="fornForecast" id="ff-ntt" autocomplete="off" checked>
-      <label class="btn btn-outline-primary btn-sm" for="ff-ntt">NTT</label>
-      <input type="radio" class="btn-check" name="fornForecast" id="ff-logicalis" autocomplete="off">
-      <label class="btn btn-outline-primary btn-sm" for="ff-logicalis">Logicalis</label>
+  <!-- Controles: visão + parceiro + estágios + totais -->
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-3">
+    <div class="d-flex align-items-center flex-wrap gap-3">
+      <div class="btn-group" role="group" aria-label="Visão">
+        <input type="radio" class="btn-check" name="fcView" id="fv-proj" autocomplete="off" checked>
+        <label class="btn btn-outline-primary btn-sm" for="fv-proj"><i class="fa-solid fa-list fa-fw me-1"></i>Projetos</label>
+        <input type="radio" class="btn-check" name="fcView" id="fv-dept" autocomplete="off">
+        <label class="btn btn-outline-primary btn-sm" for="fv-dept"><i class="fa-solid fa-sitemap fa-fw me-1"></i>Departamento</label>
+        <input type="radio" class="btn-check" name="fcView" id="fv-arch" autocomplete="off">
+        <label class="btn btn-outline-primary btn-sm" for="fv-arch"><i class="fa-solid fa-network-wired fa-fw me-1"></i>Arquitetura</label>
+      </div>
+      <div class="btn-group" role="group" aria-label="Filtro de parceiro">
+        <input type="radio" class="btn-check" name="fornForecast" id="ff-ntt" autocomplete="off" checked>
+        <label class="btn btn-outline-primary btn-sm" for="ff-ntt">NTT</label>
+        <input type="radio" class="btn-check" name="fornForecast" id="ff-logicalis" autocomplete="off">
+        <label class="btn btn-outline-primary btn-sm" for="ff-logicalis">Logicalis</label>
+      </div>
+      <div class="d-flex gap-2" id="stageChips">
+        {% for s in forecast_statuses %}
+        <button type="button" class="mk-stage-chip active" data-stage="{{ s }}">{{ s }}</button>
+        {% endfor %}
+      </div>
     </div>
-    <div class="text-end">
-      <div class="text-muted" style="font-size:.72rem;font-weight:600;letter-spacing:.04em">VALOR TOTAL (FILTRO ATUAL)</div>
-      <div class="fw-bold text-cisco" style="font-size:1.2rem" id="forecast-total">—</div>
+    <div class="d-flex gap-2">
+      <div class="mk-tile mk-tile-green text-end">
+        <div class="mk-tile-label">Commit + Best Case</div>
+        <div class="mk-tile-value" id="forecast-commit">—</div>
+      </div>
+      <div class="mk-tile text-end">
+        <div class="mk-tile-label">Total (filtro atual)</div>
+        <div class="mk-tile-value" id="forecast-total">—</div>
+      </div>
     </div>
   </div>
 
-  <div class="card shadow-sm cisco-card">
+  <!-- Visão: Projetos -->
+  <div class="card shadow-sm cisco-card" id="fc-view-proj">
     <div class="card-header d-flex align-items-center gap-2">
       <i class="fa-solid fa-chart-line" style="color:var(--cisco-bright)"></i>
       Forecast de Vendas por Projeto
@@ -374,18 +485,29 @@
             <tr>
               <th class="ps-3">Projeto</th>
               <th class="text-end">Valor do Projeto</th>
-              <th>Data de Booking</th>
+              <th>Booking</th>
               <th>DID</th>
               <th>Líder Técnico/Compra</th>
               <th>PM</th>
               <th>Status</th>
+              <th>Próxima Ação</th>
+              <th class="text-center" title="Completude MEDDPICC do deal">MEDDPICC</th>
               <th class="text-center">—</th>
             </tr>
           </thead>
           <tbody>
             {% for item in sales_forecast %}
-            <tr data-fornecedor="{{ item.fornecedor | lower }}" data-valor="{{ item.valor }}">
-              <td class="ps-3 fw-semibold">{{ item.projeto }}</td>
+            <tr data-fornecedor="{{ item.fornecedor | lower }}" data-valor="{{ item.valor }}" data-status="{{ item.status }}">
+              <td class="ps-3">
+                <a class="mk-proj-link" href="/quotes/{{ item.quote_id }}" title="Abrir a cotação">{{ item.projeto }}</a>
+                <div class="d-flex flex-wrap gap-1 mt-1">
+                  {% if item.prioridade_quarter %}<span class="mk-chip mk-chip-prio" title="Prioridade do Quarter"><i class="fa-solid fa-star fa-fw"></i>Prioridade Q</span>{% endif %}
+                  {% if item.projeto_capital %}<span class="mk-chip mk-chip-capital">Capital</span>{% endif %}
+                  {% if item.kec %}<span class="mk-chip mk-chip-kec">KEC</span>{% endif %}
+                  {% if item.vbm %}<span class="mk-chip mk-chip-vbm">VBM</span>{% endif %}
+                  {% if item.projeto_obsolescencia %}<span class="mk-chip mk-chip-obso">Obsolescência</span>{% endif %}
+                </div>
+              </td>
               <td class="text-end forecast-val" data-val="{{ item.valor }}">
                 —
                 {% if item.valor_origem == 'valor_total' %}
@@ -396,21 +518,39 @@
                    title="Algum part number sem histórico específico — usou a média geral do fornecedor"></i>
                 {% endif %}
               </td>
-              <td>{{ item.booking_date or "—" }}</td>
+              <td>
+                {% if item.booking_date %}
+                <span class="mk-datecheck" data-date="{{ item.booking_date }}" title="Data de booking prevista">{{ item.booking_date }}</span>
+                {% else %}—{% endif %}
+              </td>
               <td>{{ item.deal_id or "—" }}</td>
               <td>{{ item.tech_lead or "—" }}</td>
               <td>{{ item.pm_name or "—" }}</td>
               <td>
-                <span class="badge" style="background:rgba(0,80,115,.1);color:#005073">{{ item.status }}</span>
+                {% set status_class = {'Commit': 'commit', 'Best Case': 'best', 'Pipeline': 'pipeline', 'Upside': 'upside'}.get(item.status, 'pipeline') %}
+                <span class="mk-status mk-status-{{ status_class }}">{{ item.status }}</span>
+              </td>
+              <td class="mk-next-action">
+                {% if item.proxima_acao %}
+                {{ item.proxima_acao }}
+                {% if item.proxima_acao_data %}
+                <div><span class="mk-datecheck mk-updated" data-date="{{ item.proxima_acao_data }}"><i class="fa-regular fa-calendar fa-fw"></i>{{ item.proxima_acao_data }}</span></div>
+                {% endif %}
+                {% else %}<span class="text-muted">—</span>{% endif %}
+              </td>
+              <td class="text-center">
+                {% set score_class = 'high' if item.meddpicc_score >= 6 else ('mid' if item.meddpicc_score >= 3 else 'low') %}
+                <span class="mk-score mk-score-{{ score_class }}"
+                      title="Completude MEDDPICC — Metrics, Economic Buyer, Decision Criteria, Decision Process, Paper Process, Pain, Champion, Competition{% if item.economic_buyer %} · EB: {{ item.economic_buyer }}{% endif %}{% if item.champion %} · Champion: {{ item.champion }}{% endif %}{% if item.competition %} · Competição: {{ item.competition }}{% endif %}">
+                  {{ item.meddpicc_score }}/8
+                </span>
+                {% if item.updated_at %}
+                <div class="mk-updated" title="Última atualização{% if item.updated_by %} por {{ item.updated_by }}{% endif %}">{{ item.updated_at[:10] }}</div>
+                {% endif %}
               </td>
               <td class="text-center">
                 <button type="button" class="btn btn-sm btn-outline-secondary"
-                        onclick="openForecastEdit(this)"
-                        data-quote-id="{{ item.quote_id }}"
-                        data-booking="{{ item.booking_date }}"
-                        data-lead="{{ item.tech_lead }}"
-                        data-pm="{{ item.pm_name }}"
-                        data-status="{{ item.status }}">
+                        onclick="openForecastEdit('{{ item.quote_id }}')" title="Editar forecast">
                   <i class="fa fa-pen"></i>
                 </button>
               </td>
@@ -427,13 +567,31 @@
     </div>
   </div>
 
+  <!-- Visão: pivot Departamento / Arquitetura -->
+  <div class="card shadow-sm cisco-card d-none" id="fc-view-pivot">
+    <div class="card-header d-flex align-items-center gap-2">
+      <i class="fa-solid fa-table-cells" style="color:var(--cisco-bright)"></i>
+      <span id="pivot-title">Forecast por Departamento</span>
+    </div>
+    <div class="card-body">
+      <div id="pivot-chart-wrap" class="mb-3" style="height:200px"><canvas id="pivotChart"></canvas></div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0 small" id="pivotTable">
+          <thead class="table-light"></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="text-muted mt-2" style="font-size:.72rem" id="pivot-note"></div>
+    </div>
+  </div>
+
 </div><!-- /tab-pane forecast -->
 
 </div><!-- /tab-content -->
 
 <!-- Modal de edição do Forecast -->
 <div class="modal fade" id="forecastEditModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-lg">
     <form method="POST" id="forecastEditForm" action="">
       <div class="modal-content">
         <div class="modal-header">
@@ -441,41 +599,86 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
         </div>
         <div class="modal-body">
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">Data de Booking</label>
-            <input type="date" name="booking_date" id="fe-booking" class="form-control form-control-sm">
-          </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">Líder Técnico/Compra</label>
-            <input type="text" name="tech_lead" id="fe-lead" class="form-control form-control-sm"
-                   list="dl-tech-lead" autocomplete="off">
-            <datalist id="dl-tech-lead">
-              {% for nome in distinct_names.tech_lead %}
-              <option value="{{ nome }}">
-              {% endfor %}
-            </datalist>
-          </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">PM</label>
-            <input type="text" name="pm_name" id="fe-pm" class="form-control form-control-sm"
-                   list="dl-pm-name" autocomplete="off">
-            <datalist id="dl-pm-name">
-              {% for nome in distinct_names.pm_name %}
-              <option value="{{ nome }}">
-              {% endfor %}
-            </datalist>
-          </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">Status</label>
-            <select name="status" id="fe-status" class="form-select form-select-sm">
-              {% for s in forecast_statuses %}
-              <option value="{{ s }}">{{ s }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="mb-1">
-            <label class="form-label small fw-semibold">DID (Deal ID)</label>
-            <p class="small text-muted mb-0">Edite em "IDs &amp; Estimates" no detalhe da cotação — aparece aqui automaticamente.</p>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Data de Booking</label>
+                <input type="date" name="booking_date" id="fe-booking" class="form-control form-control-sm">
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Líder Técnico/Compra</label>
+                <input type="text" name="tech_lead" id="fe-lead" class="form-control form-control-sm"
+                       list="dl-tech-lead" autocomplete="off">
+                <datalist id="dl-tech-lead">
+                  {% for nome in distinct_names.tech_lead %}
+                  <option value="{{ nome }}">
+                  {% endfor %}
+                </datalist>
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">PM</label>
+                <input type="text" name="pm_name" id="fe-pm" class="form-control form-control-sm"
+                       list="dl-pm-name" autocomplete="off">
+                <datalist id="dl-pm-name">
+                  {% for nome in distinct_names.pm_name %}
+                  <option value="{{ nome }}">
+                  {% endfor %}
+                </datalist>
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Status</label>
+                <select name="status" id="fe-status" class="form-select form-select-sm">
+                  {% for s in forecast_statuses %}
+                  <option value="{{ s }}">{{ s }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="mb-1">
+                <label class="form-label small fw-semibold">Classificação do Projeto</label>
+                <div class="d-flex flex-column gap-1">
+                  <div class="form-check"><input class="form-check-input" type="checkbox" name="projeto_capital" id="fe-capital">
+                    <label class="form-check-label small" for="fe-capital">Projeto Capital</label></div>
+                  <div class="form-check"><input class="form-check-input" type="checkbox" name="kec" id="fe-kec">
+                    <label class="form-check-label small" for="fe-kec">KEC</label></div>
+                  <div class="form-check"><input class="form-check-input" type="checkbox" name="vbm" id="fe-vbm">
+                    <label class="form-check-label small" for="fe-vbm">VBM</label></div>
+                  <div class="form-check"><input class="form-check-input" type="checkbox" name="projeto_obsolescencia" id="fe-obso">
+                    <label class="form-check-label small" for="fe-obso">Projeto de Obsolescência</label></div>
+                  <div class="form-check"><input class="form-check-input" type="checkbox" name="prioridade_quarter" id="fe-prio">
+                    <label class="form-check-label small" for="fe-prio"><i class="fa-solid fa-star text-warning me-1"></i>Prioridade do Quarter</label></div>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Próxima Ação</label>
+                <textarea name="proxima_acao" id="fe-pacao" class="form-control form-control-sm" rows="3"
+                          placeholder="O que falta para bookar? Ex.: aguardando aprovação do DID…"></textarea>
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Data Limite da Próxima Ação</label>
+                <input type="date" name="proxima_acao_data" id="fe-pacao-data" class="form-control form-control-sm">
+              </div>
+              <div class="border rounded p-2 mb-3" style="border-color:var(--mk-border) !important">
+                <div class="small fw-semibold mb-2 text-muted"><i class="fa-solid fa-clipboard-check me-1"></i>Qualificação (MEDDPICC)</div>
+                <div class="mb-2">
+                  <label class="form-label small fw-semibold mb-1">Economic Buyer <span class="text-muted fw-normal">(quem aprova a verba)</span></label>
+                  <input type="text" name="economic_buyer" id="fe-eb" class="form-control form-control-sm" autocomplete="off">
+                </div>
+                <div class="mb-2">
+                  <label class="form-label small fw-semibold mb-1">Champion <span class="text-muted fw-normal">(patrocinador interno)</span></label>
+                  <input type="text" name="champion" id="fe-champ" class="form-control form-control-sm" autocomplete="off">
+                </div>
+                <div class="mb-1">
+                  <label class="form-label small fw-semibold mb-1">Competição <span class="text-muted fw-normal">(contra quem/quê o deal disputa)</span></label>
+                  <input type="text" name="competition" id="fe-comp" class="form-control form-control-sm" autocomplete="off">
+                </div>
+              </div>
+              <div class="mb-1">
+                <label class="form-label small fw-semibold">DID (Deal ID)</label>
+                <p class="small text-muted mb-0">Edite em "IDs &amp; Estimates" no detalhe da cotação — aparece aqui automaticamente.</p>
+              </div>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -487,6 +690,7 @@
   </div>
 </div>
 
+</div><!-- /.meraki -->
 {% endblock %}
 
 {% block scripts %}
@@ -587,36 +791,168 @@ new Chart(document.getElementById('chartDep'), {
 });
 {% endif %}
 
-// ── Forecast de Vendas: filtro de parceiro + total + modal de edição ───────────
-function filterForecast(forn) {
-  let total = 0;
-  document.querySelectorAll('#forecastTable tbody tr[data-fornecedor]').forEach(tr => {
-    const match = tr.dataset.fornecedor === forn;
-    tr.style.display = match ? '' : 'none';
-    if (match) total += parseFloat(tr.dataset.valor || 0);
-  });
-  const el = document.getElementById('forecast-total');
-  if (el) el.textContent = fmtFull(total);
+// ── Forecast de Vendas ───────────────────────────────────────────────────────
+const FDATA  = {{ sales_forecast | tojson }};
+const STAGES = {{ forecast_statuses | tojson }};
+const STAGE_COLORS = { 'Commit': '#67b346', 'Best Case': '#049FD9', 'Pipeline': '#68788c', 'Upside': '#d9a400' };
+const SEM_ARQ_BUCKET = 'Sem produtos cadastrados';
+
+let fcView   = 'proj';               // proj | dept | arch
+let fcForn   = 'ntt';                // ntt | logicalis
+let fcStages = new Set(STAGES);      // estágios ativos
+let pivotChart = null;
+
+function fcItems() {
+  return FDATA.filter(it => it.fornecedor.toLowerCase() === fcForn && fcStages.has(it.status));
 }
 
+function updateTotals() {
+  const items = fcItems();
+  const total = items.reduce((s, it) => s + it.valor, 0);
+  const commit = FDATA
+    .filter(it => it.fornecedor.toLowerCase() === fcForn && (it.status === 'Commit' || it.status === 'Best Case'))
+    .reduce((s, it) => s + it.valor, 0);
+  document.getElementById('forecast-total').textContent = fmtFull(total);
+  document.getElementById('forecast-commit').textContent = fmtFull(commit);
+}
+
+function renderProjView() {
+  document.querySelectorAll('#forecastTable tbody tr[data-fornecedor]').forEach(tr => {
+    const match = tr.dataset.fornecedor === fcForn && fcStages.has(tr.dataset.status);
+    tr.style.display = match ? '' : 'none';
+  });
+}
+
+function renderPivotView() {
+  const dim = fcView;   // dept | arch
+  document.getElementById('pivot-title').textContent =
+    dim === 'dept' ? 'Forecast por Departamento' : 'Forecast por Arquitetura';
+
+  const rows = {};
+  let hasSemArq = false;
+  fcItems().forEach(it => {
+    const parts = dim === 'dept'
+      ? [[it.departamento, it.valor]]
+      : Object.entries(it.valor_por_arquitetura);
+    parts.forEach(([label, val]) => {
+      if (label === SEM_ARQ_BUCKET) hasSemArq = true;
+      if (!rows[label]) rows[label] = { label, total: 0, stages: {} };
+      rows[label].stages[it.status] = (rows[label].stages[it.status] || 0) + val;
+      rows[label].total += val;
+    });
+  });
+  const sorted = Object.values(rows).sort((a, b) => b.total - a.total);
+  const activeStages = STAGES.filter(s => fcStages.has(s));
+
+  // Tabela pivot
+  const thead = document.querySelector('#pivotTable thead');
+  const tbody = document.querySelector('#pivotTable tbody');
+  thead.innerHTML = '<tr><th class="ps-3">' + (dim === 'dept' ? 'Departamento' : 'Arquitetura') + '</th>'
+    + activeStages.map(s => '<th class="text-end">' + s + '</th>').join('')
+    + '<th class="text-end pe-3">Total</th></tr>';
+  tbody.innerHTML = sorted.length
+    ? sorted.map(r =>
+        '<tr><td class="ps-3 fw-semibold">' + r.label + '</td>'
+        + activeStages.map(s => '<td class="text-end">' + (r.stages[s] ? fmtFull(r.stages[s]) : '<span class="text-muted">—</span>') + '</td>').join('')
+        + '<td class="text-end pe-3 fw-bold">' + fmtFull(r.total) + '</td></tr>'
+      ).join('')
+    : '<tr><td colspan="' + (activeStages.length + 2) + '" class="text-muted small p-3">Nenhum projeto no filtro atual.</td></tr>';
+
+  document.getElementById('pivot-note').textContent =
+    (dim === 'arch' && hasSemArq)
+      ? '“' + SEM_ARQ_BUCKET + '” agrupa cotações valoradas pelo Valor Total manual (sem XLS de produtos) — sem arquitetura conhecida.'
+      : '';
+
+  // Gráfico: barras horizontais empilhadas por estágio
+  document.getElementById('pivot-chart-wrap').style.height =
+    Math.max(sorted.length * 38 + 40, 120) + 'px';
+  if (pivotChart) pivotChart.destroy();
+  pivotChart = new Chart(document.getElementById('pivotChart'), {
+    type: 'bar',
+    data: {
+      labels: sorted.map(r => r.label),
+      datasets: activeStages.map(s => ({
+        label: s,
+        data: sorted.map(r => r.stages[s] || 0),
+        backgroundColor: STAGE_COLORS[s],
+        borderRadius: 3,
+        borderSkipped: false,
+      }))
+    },
+    options: {
+      ...baseOpts,
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { font: { size: 10 }, boxWidth: 12 } },
+        tooltip: { callbacks: { label: ctx => ' ' + ctx.dataset.label + ': ' + fmtFull(ctx.parsed.x) } }
+      },
+      scales: {
+        x: { ...baseOpts.scales.x, stacked: true },
+        y: { ...baseOpts.scales.y, stacked: true }
+      }
+    }
+  });
+}
+
+function renderForecast() {
+  const isProj = fcView === 'proj';
+  document.getElementById('fc-view-proj').classList.toggle('d-none', !isProj);
+  document.getElementById('fc-view-pivot').classList.toggle('d-none', isProj);
+  if (isProj) renderProjView(); else renderPivotView();
+  updateTotals();
+}
+
+// Format + destaque de datas vencidas na tabela de projetos
 document.querySelectorAll('.forecast-val').forEach(el => {
   el.firstChild.textContent = fmtFull(parseFloat(el.dataset.val || 0)) + ' ';
 });
+const todayIso = new Date().toISOString().slice(0, 10);
+document.querySelectorAll('.mk-datecheck').forEach(el => {
+  if (el.dataset.date && el.dataset.date < todayIso) {
+    el.classList.add('mk-overdue');
+    el.title = (el.title ? el.title + ' — ' : '') + 'vencida';
+  }
+});
 
-const ffNtt = document.getElementById('ff-ntt');
-const ffLog = document.getElementById('ff-logicalis');
-if (ffNtt) {
-  ffNtt.addEventListener('change', () => filterForecast('ntt'));
-  ffLog.addEventListener('change', () => filterForecast('logicalis'));
-  filterForecast('ntt'); // estado inicial, combina com o rádio marcado
+// Listeners de filtros/visões
+if (document.getElementById('ff-ntt')) {
+  document.getElementById('ff-ntt').addEventListener('change', () => { fcForn = 'ntt'; renderForecast(); });
+  document.getElementById('ff-logicalis').addEventListener('change', () => { fcForn = 'logicalis'; renderForecast(); });
+  document.getElementById('fv-proj').addEventListener('change', () => { fcView = 'proj'; renderForecast(); });
+  document.getElementById('fv-dept').addEventListener('change', () => { fcView = 'dept'; renderForecast(); });
+  document.getElementById('fv-arch').addEventListener('change', () => { fcView = 'arch'; renderForecast(); });
+  document.querySelectorAll('#stageChips .mk-stage-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = btn.dataset.stage;
+      if (fcStages.has(s)) {
+        if (fcStages.size === 1) return;   // pelo menos um estágio ativo
+        fcStages.delete(s); btn.classList.remove('active');
+      } else {
+        fcStages.add(s); btn.classList.add('active');
+      }
+      renderForecast();
+    });
+  });
+  renderForecast();   // estado inicial
 }
 
-function openForecastEdit(btn) {
-  document.getElementById('forecastEditForm').action = '/cisco/forecast/' + btn.dataset.quoteId;
-  document.getElementById('fe-booking').value = btn.dataset.booking || '';
-  document.getElementById('fe-lead').value = btn.dataset.lead || '';
-  document.getElementById('fe-pm').value = btn.dataset.pm || '';
-  document.getElementById('fe-status').value = btn.dataset.status || 'Pipeline';
+function openForecastEdit(quoteId) {
+  const it = FDATA.find(x => x.quote_id === quoteId);
+  if (!it) return;
+  document.getElementById('forecastEditForm').action = '/cisco/forecast/' + quoteId;
+  document.getElementById('fe-booking').value    = it.booking_date || '';
+  document.getElementById('fe-lead').value       = it.tech_lead || '';
+  document.getElementById('fe-pm').value         = it.pm_name || '';
+  document.getElementById('fe-status').value     = it.status || 'Pipeline';
+  document.getElementById('fe-capital').checked  = !!it.projeto_capital;
+  document.getElementById('fe-kec').checked      = !!it.kec;
+  document.getElementById('fe-vbm').checked      = !!it.vbm;
+  document.getElementById('fe-obso').checked     = !!it.projeto_obsolescencia;
+  document.getElementById('fe-prio').checked     = !!it.prioridade_quarter;
+  document.getElementById('fe-pacao').value      = it.proxima_acao || '';
+  document.getElementById('fe-pacao-data').value = it.proxima_acao_data || '';
+  document.getElementById('fe-eb').value         = it.economic_buyer || '';
+  document.getElementById('fe-champ').value      = it.champion || '';
+  document.getElementById('fe-comp').value       = it.competition || '';
   new bootstrap.Modal(document.getElementById('forecastEditModal')).show();
 }
 

@@ -1424,7 +1424,7 @@ def _compute_project_value(products: list, fornecedor: str, discount_pivot: dict
     para USD por fx_rate_value antes de aplicar o desconto. Usa o desconto
     médio do part number específico (Histórico de Descontos) quando
     disponível; senão cai para a média geral do fornecedor. Retorna
-    (valor_total, usou_fallback_em_algum_produto)."""
+    (valor_total, usou_fallback_em_algum_produto, valor_por_arquitetura)."""
     import fx_rate
 
     def _num(s):
@@ -1436,6 +1436,7 @@ def _compute_project_value(products: list, fornecedor: str, discount_pivot: dict
     forn_key = fornecedor.lower()
     total = 0.0
     used_fallback = False
+    by_arch = {}
 
     for p in products or []:
         pn = str(p.get("part_number") or "").strip().upper()
@@ -1457,9 +1458,12 @@ def _compute_project_value(products: list, fornecedor: str, discount_pivot: dict
             desconto = 0.0
             used_fallback = True
 
-        total += list_price * qty * (1 - desconto / 100)
+        item_value = list_price * qty * (1 - desconto / 100)
+        total += item_value
+        by_arch[arq] = by_arch.get(arq, 0.0) + item_value
 
-    return round(total, 2), used_fallback
+    by_arch = {k: round(v, 2) for k, v in by_arch.items()}
+    return round(total, 2), used_fallback, by_arch
 
 
 def load_cisco_forecast() -> dict:
@@ -1480,15 +1484,29 @@ def save_cisco_forecast(quote_id: str, subject: str, data: dict, user: str) -> N
         cur.execute(
             """
             INSERT INTO cisco_forecast (quote_id, booking_date, tech_lead, pm_name,
-                                        status, updated_at, updated_by)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                        status, projeto_capital, kec, vbm,
+                                        projeto_obsolescencia, prioridade_quarter,
+                                        proxima_acao, proxima_acao_data,
+                                        economic_buyer, champion, competition,
+                                        updated_at, updated_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (quote_id) DO UPDATE SET
-                booking_date = EXCLUDED.booking_date,
-                tech_lead    = EXCLUDED.tech_lead,
-                pm_name      = EXCLUDED.pm_name,
-                status       = EXCLUDED.status,
-                updated_at   = EXCLUDED.updated_at,
-                updated_by   = EXCLUDED.updated_by
+                booking_date          = EXCLUDED.booking_date,
+                tech_lead             = EXCLUDED.tech_lead,
+                pm_name               = EXCLUDED.pm_name,
+                status                = EXCLUDED.status,
+                projeto_capital       = EXCLUDED.projeto_capital,
+                kec                   = EXCLUDED.kec,
+                vbm                   = EXCLUDED.vbm,
+                projeto_obsolescencia = EXCLUDED.projeto_obsolescencia,
+                prioridade_quarter    = EXCLUDED.prioridade_quarter,
+                proxima_acao          = EXCLUDED.proxima_acao,
+                proxima_acao_data     = EXCLUDED.proxima_acao_data,
+                economic_buyer        = EXCLUDED.economic_buyer,
+                champion              = EXCLUDED.champion,
+                competition           = EXCLUDED.competition,
+                updated_at            = EXCLUDED.updated_at,
+                updated_by            = EXCLUDED.updated_by
             """,
             (
                 quote_id,
@@ -1496,12 +1514,69 @@ def save_cisco_forecast(quote_id: str, subject: str, data: dict, user: str) -> N
                 data.get("tech_lead", ""),
                 data.get("pm_name", ""),
                 data.get("status") or "Pipeline",
+                bool(data.get("projeto_capital")),
+                bool(data.get("kec")),
+                bool(data.get("vbm")),
+                bool(data.get("projeto_obsolescencia")),
+                bool(data.get("prioridade_quarter")),
+                data.get("proxima_acao", ""),
+                data.get("proxima_acao_data") or None,
+                data.get("economic_buyer", ""),
+                data.get("champion", ""),
+                data.get("competition", ""),
                 now_str,
                 user,
             ),
         )
     if changes:
         _append_audit(quote_id, subject, changes, user, action="cisco_forecast")
+
+
+# Bucket da visão por arquitetura para cotações valoradas pelo Valor Total
+# manual (sem XLS de produtos — não há como saber a arquitetura)
+SEM_ARQUITETURA = "Sem produtos cadastrados"
+
+# Flags de classificação do projeto (aba Forecast da área Cisco)
+FORECAST_FLAGS = ["projeto_capital", "kec", "vbm", "projeto_obsolescencia", "prioridade_quarter"]
+
+
+def _meddpicc_score(item: dict, has_forecast_record: bool) -> int:
+    """Completude do deal segundo o MEDDPICC (0–8), um ponto por critério:
+    Metrics = valor calculado > 0; Economic Buyer = campo preenchido;
+    Decision Criteria = status classificado manualmente (registro salvo);
+    Decision Process = data de booking definida; Paper Process = próxima
+    ação registrada; Identify Pain = alguma flag de classificação marcada;
+    Champion = campo preenchido; Competition = campo preenchido."""
+    criteria = [
+        item["valor"] > 0,
+        bool(item["economic_buyer"]),
+        has_forecast_record,
+        bool(item["booking_date"]),
+        bool(item["proxima_acao"]),
+        any(item[f] for f in FORECAST_FLAGS),
+        bool(item["champion"]),
+        bool(item["competition"]),
+    ]
+    return sum(criteria)
+
+
+def _pivot_forecast_items(items: list, dimension: str) -> list:
+    """Pivot dos itens do forecast por uma dimensão × estágio. `dimension` é
+    'departamento' (valor cheio do item por depto) ou 'valor_por_arquitetura'
+    (rateado pelo breakdown por arquitetura). Retorna linhas
+    {label, stages: {status: valor}, total} ordenadas por total desc."""
+    rows = {}
+    for item in items:
+        status = item["status"]
+        if dimension == "valor_por_arquitetura":
+            parts = item["valor_por_arquitetura"].items()
+        else:
+            parts = [(item[dimension], item["valor"])]
+        for label, valor in parts:
+            row = rows.setdefault(label, {"label": label, "stages": {s: 0.0 for s in FORECAST_STATUSES}, "total": 0.0})
+            row["stages"][status] = round(row["stages"].get(status, 0.0) + valor, 2)
+            row["total"] = round(row["total"] + valor, 2)
+    return sorted(rows.values(), key=lambda r: r["total"], reverse=True)
 
 
 def get_sales_forecast() -> dict:
@@ -1542,7 +1617,7 @@ def get_sales_forecast() -> dict:
         if not projeto:
             projeto = email_matcher.normalize_subject(q.get("subject", "")) or q.get("subject", "") or "—"
 
-        valor, used_fallback = _compute_project_value(
+        valor, used_fallback, by_arch = _compute_project_value(
             q.get("products", []), fornecedor, discount_pivot, vendor_avg, rate
         )
 
@@ -1556,22 +1631,53 @@ def get_sales_forecast() -> dict:
                 valor = round(float(valor_total_usd), 2)
                 valor_origem = "valor_total"
 
-        items.append({
+        # Valor manual não tem produtos — sem arquitetura conhecida, mas o
+        # total da visão por arquitetura precisa fechar com o total geral.
+        if valor > 0 and not by_arch:
+            by_arch = {SEM_ARQUITETURA: valor}
+
+        departamento = (q.get("department") or "").strip()
+        if not departamento or departamento.upper() == "NA":
+            departamento = "Não informado"
+
+        item = {
             "quote_id":       q["id"],
             "projeto":        projeto,
             "fornecedor":     fornecedor,
             "valor":          valor,
             "valor_fallback": used_fallback,
             "valor_origem":   valor_origem,
+            "valor_por_arquitetura": by_arch,
+            "departamento":   departamento,
             "deal_id":        deal.get("deal_id", ""),
             "booking_date":   fc.get("booking_date", "") or "",
             "tech_lead":      fc.get("tech_lead", "") or "",
             "pm_name":        fc.get("pm_name", "") or "",
             "status":         fc.get("status") or "Pipeline",
-        })
+            "projeto_capital":       bool(fc.get("projeto_capital")),
+            "kec":                   bool(fc.get("kec")),
+            "vbm":                   bool(fc.get("vbm")),
+            "projeto_obsolescencia": bool(fc.get("projeto_obsolescencia")),
+            "prioridade_quarter":    bool(fc.get("prioridade_quarter")),
+            "proxima_acao":          fc.get("proxima_acao", "") or "",
+            "proxima_acao_data":     fc.get("proxima_acao_data", "") or "",
+            "economic_buyer":        fc.get("economic_buyer", "") or "",
+            "champion":              fc.get("champion", "") or "",
+            "competition":           fc.get("competition", "") or "",
+            "updated_at":            fc.get("updated_at", "") or "",
+            "updated_by":            fc.get("updated_by", "") or "",
+        }
+        item["meddpicc_score"] = _meddpicc_score(item, has_forecast_record=bool(fc))
+        items.append(item)
 
-    items.sort(key=lambda r: r["valor"], reverse=True)
-    return {"items": items, "fx_rate": rate, "fx_rate_is_live": rate_is_live}
+    items.sort(key=lambda r: (r["prioridade_quarter"], r["valor"]), reverse=True)
+    return {
+        "items":           items,
+        "by_department":   _pivot_forecast_items(items, "departamento"),
+        "by_architecture": _pivot_forecast_items(items, "valor_por_arquitetura"),
+        "fx_rate":         rate,
+        "fx_rate_is_live": rate_is_live,
+    }
 
 
 def change_password(username: str, current_password: str, new_password: str) -> tuple[bool, str]:

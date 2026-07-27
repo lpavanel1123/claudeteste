@@ -154,14 +154,40 @@ CREATE INDEX IF NOT EXISTS idx_email_threads_quote ON email_threads(quote_id);
 -- projeto NTT ou Logicalis. Valor do projeto e nome do projeto não são
 -- armazenados aqui — são calculados sob demanda (ver data_store.get_sales_forecast).
 CREATE TABLE IF NOT EXISTS cisco_forecast (
-  quote_id      TEXT PRIMARY KEY REFERENCES extractions(id) ON DELETE CASCADE,
-  booking_date  DATE,
-  tech_lead     TEXT,
-  pm_name       TEXT,
-  status        VARCHAR(32) NOT NULL DEFAULT 'Pipeline',
-  updated_at    TIMESTAMP,
-  updated_by    TEXT
+  quote_id              TEXT PRIMARY KEY REFERENCES extractions(id) ON DELETE CASCADE,
+  booking_date          DATE,
+  tech_lead             TEXT,
+  pm_name               TEXT,
+  status                VARCHAR(32) NOT NULL DEFAULT 'Pipeline',
+  -- Classificação do projeto (flags)
+  projeto_capital       BOOLEAN NOT NULL DEFAULT FALSE,
+  kec                   BOOLEAN NOT NULL DEFAULT FALSE,
+  vbm                   BOOLEAN NOT NULL DEFAULT FALSE,
+  projeto_obsolescencia BOOLEAN NOT NULL DEFAULT FALSE,
+  prioridade_quarter    BOOLEAN NOT NULL DEFAULT FALSE,
+  -- Acompanhamento
+  proxima_acao          TEXT,
+  proxima_acao_data     DATE,
+  -- Qualificação MEDDPICC (versão enxuta)
+  economic_buyer        TEXT,
+  champion              TEXT,
+  competition           TEXT,
+  updated_at            TIMESTAMP,
+  updated_by            TEXT
 );
+
+-- Migração para bancos criados antes das colunas acima (CREATE TABLE IF NOT
+-- EXISTS não adiciona colunas em tabela existente)
+ALTER TABLE cisco_forecast ADD COLUMN IF NOT EXISTS projeto_capital       BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE cisco_forecast ADD COLUMN IF NOT EXISTS kec                   BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE cisco_forecast ADD COLUMN IF NOT EXISTS vbm                   BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE cisco_forecast ADD COLUMN IF NOT EXISTS projeto_obsolescencia BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE cisco_forecast ADD COLUMN IF NOT EXISTS prioridade_quarter    BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE cisco_forecast ADD COLUMN IF NOT EXISTS proxima_acao          TEXT;
+ALTER TABLE cisco_forecast ADD COLUMN IF NOT EXISTS proxima_acao_data     DATE;
+ALTER TABLE cisco_forecast ADD COLUMN IF NOT EXISTS economic_buyer        TEXT;
+ALTER TABLE cisco_forecast ADD COLUMN IF NOT EXISTS champion              TEXT;
+ALTER TABLE cisco_forecast ADD COLUMN IF NOT EXISTS competition           TEXT;
 
 -- Cotações favoritadas por usuário ("Favoritos" na sidebar)
 CREATE TABLE IF NOT EXISTS favorites (
