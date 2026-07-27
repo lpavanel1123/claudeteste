@@ -755,6 +755,32 @@ def save_timeline(quote_id: str, subject: str, dates: dict, user: str, action: s
         _append_audit(quote_id, subject, changes, user, action=action)
 
 
+def apply_import_dates_to_timeline(quote_id: str, subject: str, request_type: str,
+                                    solicitacao_date: str, resposta_date: str, user: str) -> None:
+    """Deriva os 2 primeiros passos da Timeline a partir de 'Data da
+    Solicitação' e 'Resposta da Cotação' (import batch, /admin/import) —
+    o mesmo dado que já vira extractions.date/deals.response_received_at
+    também alimenta 'Solicitação de Orçamento/Pedido' e 'Entrega do
+    Orçamento'. Só preenche o que ainda estiver vazio; nunca sobrescreve
+    uma data de timeline já existente (ex: avançada manualmente depois)."""
+    if not solicitacao_date and not resposta_date:
+        return
+
+    first_step = "solicitacao_pedido" if request_type == "Pedido" else "solicitacao_orcamento"
+    dates = dict(load_timelines().get(quote_id, {}).get("dates", {}))
+    changed = False
+
+    if solicitacao_date and not dates.get(first_step):
+        dates[first_step] = solicitacao_date[:10]
+        changed = True
+    if resposta_date and not dates.get("entrega_orcamento"):
+        dates["entrega_orcamento"] = resposta_date[:10]
+        changed = True
+
+    if changed:
+        save_timeline(quote_id, subject, dates, user, action="bulk_import_update")
+
+
 def check_and_advance_by_deadline(quote_id: str, subject: str, user: str) -> None:
     """Avança 'Entrega ao Parceiro' quando o prazo previsto (CCW ou estimativa
     calculada, vale a que estiver disponível) já passou, ou quando alguém marcou

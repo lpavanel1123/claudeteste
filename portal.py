@@ -1065,6 +1065,7 @@ def admin_import_upload():
             data_store.save_annotation(matched_id, subject, ann_data, user)
             if deal_clean:
                 data_store.save_deal(matched_id, subject, deal_clean, user)
+            target_id = matched_id
             updated += 1
         else:
             new_id = _uuid.uuid4().hex[:12]
@@ -1081,7 +1082,12 @@ def admin_import_upload():
             data_store.save_annotation(new_id, subject, ann_data, user)
             if deal_clean:
                 data_store.save_deal(new_id, subject, deal_clean, user)
+            target_id = new_id
             created += 1
+
+        data_store.apply_import_dates_to_timeline(
+            target_id, subject, extract_fields["request_type"], parsed_date, resp_date, user
+        )
 
     session["import_result"] = {"created": created, "updated": updated, "errors": errors}
     return redirect(url_for("admin_import"))
