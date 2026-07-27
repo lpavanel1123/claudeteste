@@ -152,31 +152,43 @@ No painel do Cloudmailin:
 
 | Tela | Funcionalidade |
 |---|---|
-| **Dashboard** | KPIs + gráficos com atualização automática + seção Operacional |
-| **Cotações** | Lista filtrável com toggle de colunas, edição inline de assunto e coluna de Etapa Timeline |
+| **Dashboard** | KPIs + gráficos com atualização automática + seção Operacional + **Pendências** |
+| **Cotações** | Lista filtrável com toggle de colunas, edição inline de assunto, coluna de Etapa Timeline, favoritos e exportação CSV |
 | **Detalhe** | Visão completa com todas as seções abaixo |
-| **Nova Cotação** | Formulário para inclusão manual completa |
+| **Nova Cotação** | Formulário para inclusão manual completa (ou pré-preenchido via "Duplicar") |
 | **Histórico** | Log de auditoria de toda alteração, filtrável por usuário |
-| **Admin** | Gestão de usuários e importação batch (visível apenas para role=admin) |
+| **Admin** | Usuários, importação batch, observabilidade e Duplicatas (visível apenas para role=admin) |
+
+Uma busca global (navbar, qualquer tela) aceita ID da cotação, ID de vendor (`NTT31072`, `PRJ0078112`, Deal ID etc.) ou cai para busca por assunto — ver `GET /search` em `portal.py`.
 
 ### Lista de Cotações — funcionalidades
 
 - **Filtros:** Busca livre, Tipo, Status, Etapa da Timeline, Fornecedor
+- **Quick filters:** botões de um clique — "Vencidos" (prazo previsto já passado, reaproveita a mesma lógica de Pendências) e "Sem fornecedor definido"
+- **Favoritos:** estrela por linha (⭐), persistida por usuário (tabela `favorites`); "Favoritos" na sidebar filtra só os marcados (`/quotes?favoritos=1`)
+- **Exportar CSV:** respeita os filtros/quick filters ativos no momento (`/quotes/export.csv`, BOM UTF-8 para abrir corretamente no Excel)
 - **Toggle de colunas:** mostrar/ocultar colunas individualmente (preferência salva no `localStorage`)
 - **Assunto editável inline:** clique no assunto para editar sem sair da lista (salva via fetch)
 - **Etapa Timeline:** barra de progresso + contador `X/Y` + ícone da etapa atual; verde quando concluído
 - **Requisitante:** exibe `requester_name` em vez do remetente do email
+- **Aviso de fornecedor sem resposta:** ícone vermelho quando `deals.response_received_at` está vazio há mais de `VENDOR_RESPONSE_WARN_DAYS` (15 dias)
 
 ### Seções do Detalhe de Cotação
 
 | Seção | Descrição |
 |---|---|
 | **Dados Extraídos** | Campos do email/XLS com correção inline e histórico de versões |
-| **Informações Manuais** | Status, valor, responsável, fornecedor, observações |
+| **Informações Manuais** | Status, valor, responsável, fornecedor, observações, checkbox Entregue |
 | **IDs & Estimates** | Projeto ID (Vale), Logicalis ID, NTT ID, Estimate Nacional/Importado, Order ID, Deal ID |
+| **Cotações Relacionadas** | Links (só leitura) para cotações do mesmo projeto com outro fornecedor — nunca mescla, ver `data_store.find_related_quotes_other_vendor` |
 | **Timeline do Processo** | Etapas visuais com datas editáveis e Previsão de Conclusão automática |
 | **Email na Íntegra** | Cabeçalhos, corpo texto e HTML do email recebido |
 | **Produtos** | Tabela com Arquitetura, Categoria e Origem classificadas automaticamente |
+
+**Botões do cabeçalho:**
+- **Duplicar** — cria uma Nova Cotação pré-preenchida com Departamento/CNPJ/Smart Account/Fornecedor desta (`/quotes/new?from_id=<id>`)
+- **Salvar Tudo** — salva Informações Manuais + IDs & Estimates + Timeline em um clique só (3 `fetch()` em paralelo); os 3 botões "Salvar" individuais continuam funcionando normalmente
+- Campos de nome (Responsável Interno, Líder Técnico/Compra, PM) têm autocomplete (`<datalist>`) com valores já usados antes (`data_store.get_distinct_names`)
 
 ---
 
@@ -228,6 +240,24 @@ Regras:
 - Se o prazo previsto existir mas estiver em formato inválido, **nada é alterado** — fica sinalizado no Histórico como `deadline_check_pending`, para revisão manual.
 - Avança só até "Entrega ao Parceiro" (não em cascata até "Entrega à Área Demandante").
 - É chamado em dois pontos: (1) a cada sync diário do bot de CCW (`process_ccw_sync`, quando `Bot-rotina/run_daily.py` faz `POST /api/v1/leadtime`) e (2) ao salvar Informações Manuais no portal, pra refletir o checkbox na hora sem esperar o próximo sync.
+
+---
+
+## Pendências
+
+`data_store.get_pending_items()` calcula, sob demanda (nunca escreve nada), 4 grupos de itens que precisam de atenção:
+
+| Grupo | Critério |
+|---|---|
+| **Prazo vencido, não avançado** | Pedido cujo prazo previsto (`compute_auto_forecast`) já passou mas `entrega_parceiro` ainda não foi preenchido |
+| **Parado na etapa há muito tempo** | Dias desde a última etapa concluída > `STAGE_AGE_WARN_DAYS` (30) — mesma lógica de idade do Top 10 do Dashboard, generalizada para todos os itens acima do limiar |
+| **Fornecedor sem resposta** | `annotations.fornecedor` em (NTT, Logicalis) sem `deals.response_received_at`, há mais de `VENDOR_RESPONSE_WARN_DAYS` (15 dias) |
+| **Pendente de revisão** | Entradas `deadline_check_pending` no Histórico sem um `auto_advance_deadline` posterior para o mesmo `quote_id` |
+
+**Onde aparece:**
+- Badge numérico na sidebar (`data_store.get_pending_count_cached`, cache de 60s — a função completa faz 5 consultas e evitamos recalcular a cada navegação de página)
+- Seção "Pendências" no Dashboard, atualizada a cada 30s via `GET /api/pending-items` (sessão logada)
+- `GET /api/v1/pending-items` — mesma informação, protegida por `X-API-Key` (`_api_key_required`), pronta para o Bot-rotina consumir e montar um resumo (Webex, por exemplo) sem precisar duplicar essa lógica
 
 ---
 
@@ -366,48 +396,57 @@ Criação de usuários com username, senha (hash pbkdf2:sha256) e role: `admin` 
 
 `date` e `response_received_at` aceitam `DD/MM/AAAA` ou `AAAA-MM-DD` (`portal._parse_import_date`); célula de data nativa do Excel também funciona. Vazio nunca apaga um valor já existente — em criação, `date` vazia usa a data de hoje; em atualização, `date`/`response_received_at` vazios simplesmente não são tocados.
 
+### Duplicatas (`/admin/duplicates`)
+
+Relatório (`data_store.find_duplicate_groups`) agrupando cotações com o **mesmo assunto normalizado** (`email_matcher.normalize_subject`) **e o mesmo fornecedor** — geralmente histórico anterior à correlação automática de email. Cotações sem `fornecedor` definido nunca entram num grupo (mesmo princípio do `email_matcher`: nunca correlacionar sem saber o vendor ao certo). É só um relatório para revisão manual — **nenhuma mesclagem é feita automaticamente**.
+
 ---
 
 ## Estrutura do projeto
 
+Pós-migração para Postgres — não há mais `data/*.json` (schema completo em `schema.sql`).
+
 ```
-├── main.py               # Inicia o servidor de webhook (porta 8025)
-├── portal.py             # Inicia o portal web (porta 8080)
-├── webhook_server.py     # Flask: recebe POSTs do Cloudmailin
-├── email_parser.py       # Parse do payload multipart Cloudmailin
-├── extractor.py          # Extrai campos do corpo do email
-├── xls_reader.py         # Lê XLS/XLSX (fallback genérico)
-├── classifier.py         # Classifica PIDs em Arquitetura + Categoria (regras + keywords)
-├── pid_kb.py             # Base de PIDs com aprendizado de correções manuais
-├── data_store.py         # Leitura/escrita de todos os JSONs do portal
-├── config.py             # Configurações via variáveis de ambiente
-├── seed_data.py          # Gerador de dados de treinamento
-├── heartbeat.py          # Ping periódico (uso com tunnel SSH legado)
-├── modelo.xlsx           # Modelo de export CCW para referência de colunas
+├── main.py                    # Inicia o servidor de webhook (porta 8025)
+├── portal.py                  # Inicia o portal web (porta 8080) — todas as rotas Flask
+├── webhook_server.py          # Flask: recebe POSTs do Cloudmailin, orquestra parsing/correlação
+├── email_parser.py            # Parse do payload multipart Cloudmailin (+ headers de thread)
+├── email_matcher.py           # Correlação de email → quote_id (vendor gate, IDs, projeto)
+├── extractor.py                # Extrai campos do corpo do email
+├── extractions.py              # Insere uma nova cotação (extractions.save)
+├── storage.py                  # Log bruto de todo email recebido (email_log)
+├── xls_reader.py               # Lê XLS/XLSX (fallback genérico)
+├── classifier.py                # Classifica PIDs em Arquitetura + Categoria (regras + keywords)
+├── pid_kb.py                    # Base de PIDs com aprendizado de correções manuais
+├── fx_rate.py                   # Cotação USD/BRL (Nacional → USD), cache 1h + fallback
+├── data_store.py                 # Toda leitura/escrita no Postgres (queries do portal)
+├── db.py                         # Pool de conexões psycopg2
+├── config.py                     # Configurações via variáveis de ambiente
+├── schema.sql                    # Schema completo — aplicar com psql $DATABASE_URL -f schema.sql
+├── seed_data.py                   # Gerador de dados de treinamento
+├── scripts/migrate_json_to_postgres.py  # Migração one-off (já executada) do JSON legado
+├── heartbeat.py                   # Ping periódico (uso com tunnel SSH legado, não usado em produção)
+├── modelo.xlsx                    # Modelo de export CCW para referência de colunas
 ├── requirements.txt
 ├── .env.example
 │
 ├── templates/
-│   ├── base.html         # Layout com sidebar e navbar estilo Cisco
+│   ├── base.html               # Layout com sidebar (mobile: vira gaveta), navbar + busca global
 │   ├── login.html
-│   ├── dashboard.html    # KPIs + gráficos + seção Operacional
-│   ├── quotes.html       # Lista com filtros, toggle de colunas, etapa timeline
-│   ├── quote_detail.html # Detalhe + edição + timeline + produtos classificados
-│   ├── new_quote.html    # Formulário de inclusão manual
-│   ├── logs.html         # Histórico de auditoria
-│   ├── admin.html        # Gestão de usuários (admin only)
-│   └── admin_import.html # Importação batch via Excel (admin only)
+│   ├── dashboard.html           # KPIs + gráficos + seção Operacional + Pendências
+│   ├── quotes.html              # Lista: filtros, quick filters, favoritos, export CSV
+│   ├── quote_detail.html        # Detalhe + Cotações Relacionadas + Salvar Tudo + Duplicar
+│   ├── new_quote.html           # Formulário de inclusão manual (aceita ?from_id= para duplicar)
+│   ├── logs.html                # Histórico de auditoria
+│   ├── admin.html                # Gestão de usuários (admin only)
+│   ├── admin_import.html         # Importação batch via Excel (admin only)
+│   ├── admin_observability.html  # Saúde dos serviços + métricas do bot (admin only)
+│   ├── admin_duplicates.html      # Relatório de possíveis duplicatas (admin only)
+│   └── cisco.html                 # Spend Analysis + Histórico de Descontos + Forecast (empresa=Cisco)
 │
-├── static/style.css      # Design system Cisco (#005073 · #049FD9 · #00BCEB)
+├── static/style.css              # Design system Cisco (#005073 · #049FD9 · #00BCEB)
 │
-└── data/                 # Gerado em runtime — NÃO versionado
-    ├── users.json        # Usuários com senha em hash
-    ├── annotations.json  # Campos manuais por cotação
-    ├── corrections.json  # Correções de dados auto-extraídos
-    ├── timelines.json    # Datas das etapas do processo
-    ├── deals.json        # IDs e Estimates por cotação
-    ├── pid_kb.json       # Base de PIDs classificados (auto + manual)
-    └── audit_log.json    # Log de toda alteração
+└── tests/                        # pytest — lógica pura via monkeypatch, sem precisar de banco
 ```
 
 ---

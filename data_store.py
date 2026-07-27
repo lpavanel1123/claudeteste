@@ -804,6 +804,234 @@ def check_and_advance_by_deadline(quote_id: str, subject: str, user: str) -> Non
     save_timeline(quote_id, subject, dates, user, action="auto_advance_deadline")
 
 
+# ── Pendências (itens que precisam de atenção humana) ──────────────────────────
+
+STAGE_AGE_WARN_DAYS = 30
+STAGE_AGE_CRITICAL_DAYS = 60
+VENDOR_RESPONSE_WARN_DAYS = 15
+
+_OPEN_STATUSES = ("Em Aberto", "Em Análise", "Aprovada")
+
+
+def _days_since(date_str: str):
+    """Dias corridos desde uma data em 'YYYY-MM-DD' ou 'YYYY-MM-DD HH:MM:SS'.
+    Retorna None se vazia/não reconhecida (nunca lança)."""
+    s = str(date_str or "").strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return (datetime.now() - datetime.strptime(s[:19], fmt)).days
+        except ValueError:
+            continue
+    return None
+
+
+def get_pending_items() -> dict:
+    """Itens que precisam de atenção humana, calculados sob demanda (sem
+    escrever nada em lugar nenhum) — usado pelo badge 'Pendências' da sidebar,
+    pela seção correspondente no Dashboard, e exposto via
+    GET /api/v1/pending-items para o Bot-rotina consumir no futuro.
+
+    - overdue_forecast: Pedido com prazo previsto (CCW ou estimado) já
+      vencido, mas ainda não avançado para 'Entrega ao Parceiro' — mesma
+      comparação de check_and_advance_by_deadline, sem o efeito colateral.
+    - stuck_stage: cotação/pedido parado há mais de STAGE_AGE_WARN_DAYS na
+      etapa atual (mesma lógica de idade do Top 10 do Dashboard, generalizada
+      para todos os itens acima do limiar, não só os 10 primeiros).
+    - pending_review: entradas 'deadline_check_pending' no histórico que
+      ainda não tiveram um 'auto_advance_deadline' posterior para o mesmo
+      quote_id (prazo malformado, nunca resolvido).
+    - awaiting_vendor: cotação com fornecedor NTT/Logicalis sem
+      deals.response_received_at preenchido há mais de VENDOR_RESPONSE_WARN_DAYS.
+    """
+    quotes      = load_extractions()
+    annotations = load_annotations()
+    timelines   = load_timelines()
+    deals       = load_deals()
+
+    overdue_forecast, stuck_stage, awaiting_vendor = [], [], []
+
+    for q in quotes:
+        ann = annotations.get(q["id"], {})
+        if ann.get("status", "Em Aberto") not in _OPEN_STATUSES:
+            continue
+
+        timeline = timelines.get(q["id"], {"dates": {}})
+        tl_dates = timeline.get("dates", {})
+
+        if q.get("request_type") == "Pedido" and not tl_dates.get("entrega_parceiro"):
+            deal = deals.get(q["id"], {})
+            forecast, _ = compute_auto_forecast(q, timeline, deal)
+            if forecast:
+                try:
+                    from datetime import date as _date
+                    if _date.fromisoformat(str(forecast)[:10]) < _date.today():
+                        overdue_forecast.append({
+                            "quote_id": q["id"], "subject": q.get("subject", ""),
+                            "dias": _days_since(forecast),
+                        })
+                except ValueError:
+                    pass
+
+        rtype = q.get("request_type") or "Cotação"
+        steps_list = TIMELINE_STEPS.get(rtype, TIMELINE_STEPS["Cotação"])
+        last_step_date = None
+        for step in steps_list:
+            val = tl_dates.get(step["key"], "")
+            if not val:
+                break
+            last_step_date = val
+        age = _days_since(last_step_date or q.get("date"))
+        if age is not None and age > STAGE_AGE_WARN_DAYS:
+            stuck_stage.append({"quote_id": q["id"], "subject": q.get("subject", ""), "dias": age})
+
+        fornecedor = (ann.get("fornecedor") or "").strip()
+        if fornecedor in ("NTT", "Logicalis"):
+            deal = deals.get(q["id"], {})
+            if not deal.get("response_received_at"):
+                age_sent = _days_since(q.get("date"))
+                if age_sent is not None and age_sent > VENDOR_RESPONSE_WARN_DAYS:
+                    awaiting_vendor.append({
+                        "quote_id": q["id"], "subject": q.get("subject", ""), "dias": age_sent,
+                    })
+
+    audit = load_audit_log()
+    pending_by_quote = {}
+    for entry in sorted(audit, key=lambda a: a.get("timestamp", "")):
+        qid = entry.get("quote_id")
+        if entry.get("action") == "deadline_check_pending":
+            pending_by_quote[qid] = entry
+        elif entry.get("action") == "auto_advance_deadline":
+            pending_by_quote.pop(qid, None)
+    pending_review = [
+        {"quote_id": qid, "subject": e.get("subject", ""), "timestamp": e.get("timestamp", "")}
+        for qid, e in pending_by_quote.items()
+    ]
+
+    return {
+        "overdue_forecast": overdue_forecast,
+        "stuck_stage":      stuck_stage,
+        "pending_review":   pending_review,
+        "awaiting_vendor":  awaiting_vendor,
+        "total": len(overdue_forecast) + len(stuck_stage) + len(pending_review) + len(awaiting_vendor),
+    }
+
+
+_pending_count_cache = {"total": 0, "at": 0.0}
+_PENDING_COUNT_CACHE_TTL = 60  # segundos
+
+
+def get_pending_count_cached() -> int:
+    """Versão cacheada (60s) de get_pending_items()['total'] — usada pelo
+    badge da sidebar, que aparece em toda página. get_pending_items() faz
+    5 consultas (extractions/annotations/timelines/deals/audit_log); rodar
+    isso a cada navegação seria caro, então o badge usa este cache e só a
+    página de Dashboard chama get_pending_items() direto, sem cache."""
+    import time as _time
+    now = _time.time()
+    if now - _pending_count_cache["at"] > _PENDING_COUNT_CACHE_TTL:
+        _pending_count_cache["total"] = get_pending_items()["total"]
+        _pending_count_cache["at"] = now
+    return _pending_count_cache["total"]
+
+
+def get_distinct_names() -> dict:
+    """Valores distintos já usados para nomes de pessoas, para alimentar
+    autocomplete/datalist em vez de retranscrever o nome inteiro de novo."""
+    with db.get_cursor() as cur:
+        cur.execute("SELECT DISTINCT requester_name FROM extractions WHERE TRIM(requester_name) <> '' ORDER BY 1")
+        requester_name = [r["requester_name"] for r in cur.fetchall()]
+        cur.execute("SELECT DISTINCT responsavel_interno FROM annotations WHERE TRIM(responsavel_interno) <> '' ORDER BY 1")
+        responsavel_interno = [r["responsavel_interno"] for r in cur.fetchall()]
+        cur.execute("SELECT DISTINCT tech_lead FROM cisco_forecast WHERE TRIM(tech_lead) <> '' ORDER BY 1")
+        tech_lead = [r["tech_lead"] for r in cur.fetchall()]
+        cur.execute("SELECT DISTINCT pm_name FROM cisco_forecast WHERE TRIM(pm_name) <> '' ORDER BY 1")
+        pm_name = [r["pm_name"] for r in cur.fetchall()]
+    return {
+        "requester_name":      requester_name,
+        "responsavel_interno": responsavel_interno,
+        "tech_lead":           tech_lead,
+        "pm_name":             pm_name,
+    }
+
+
+def find_related_quotes_other_vendor(quote_id: str) -> list:
+    """Cotações de OUTRO vendor (NTT/Logicalis) que parecem ser do mesmo
+    projeto (mesmo assunto normalizado). Só leitura — é um atalho de
+    navegação entre as duas cotações, nunca mescla nada (mesma garantia de
+    email_matcher.resolve(), que não é reaproveitado aqui de propósito)."""
+    import email_matcher
+
+    quote = get_extraction_by_id(quote_id)
+    if not quote:
+        return []
+    own_fornecedor = (load_annotations().get(quote_id, {}).get("fornecedor") or "").strip()
+    if own_fornecedor not in ("NTT", "Logicalis"):
+        return []
+    own_normalized = email_matcher.normalize_subject(quote.get("subject", ""))
+    if not own_normalized:
+        return []
+
+    with db.get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT e.id, e.subject, a.fornecedor, COALESCE(a.status, 'Em Aberto') AS status
+            FROM extractions e
+            JOIN annotations a ON a.quote_id = e.id
+            WHERE e.id <> %s AND a.fornecedor IN ('NTT', 'Logicalis') AND a.fornecedor <> %s
+            """,
+            (quote_id, own_fornecedor),
+        )
+        candidates = cur.fetchall()
+
+    related = []
+    for row in candidates:
+        if email_matcher.normalize_subject(row["subject"] or "") == own_normalized:
+            related.append({
+                "quote_id":   row["id"],
+                "subject":    row["subject"],
+                "fornecedor": row["fornecedor"],
+                "status":     row["status"],
+            })
+    return related
+
+
+def find_duplicate_groups() -> list:
+    """Agrupa cotações pelo mesmo assunto normalizado + mesmo fornecedor —
+    candidatas a duplicata (ex.: histórico anterior à correlação de email).
+    Só relatório para revisão manual em /admin/duplicates — nunca mescla."""
+    import email_matcher
+
+    quotes      = load_extractions()
+    annotations = load_annotations()
+
+    groups: dict = {}
+    for q in quotes:
+        ann = annotations.get(q["id"], {})
+        fornecedor = (ann.get("fornecedor") or "").strip()
+        if not fornecedor:
+            continue  # vendor desconhecido — não agrupa (mesmo princípio do email_matcher: nunca correlacionar sem saber o vendor)
+        normalized = email_matcher.normalize_subject(q.get("subject", ""))
+        if not normalized:
+            continue
+        key = (normalized, fornecedor)
+        groups.setdefault(key, []).append({
+            "quote_id": q["id"],
+            "subject":  q.get("subject", ""),
+            "date":     q.get("date", ""),
+            "status":   ann.get("status", "Em Aberto"),
+        })
+
+    result = [
+        # "quotes", não "items" — em Jinja, g.items colidiria com o método dict.items()
+        {"normalized": key[0], "fornecedor": key[1], "quotes": sorted(items, key=lambda i: i["date"])}
+        for key, items in groups.items() if len(items) > 1
+    ]
+    result.sort(key=lambda g: len(g["quotes"]), reverse=True)
+    return result
+
+
 # ── CCW Bot sync ──────────────────────────────────────────────────────────────
 
 def process_ccw_sync(quote_id: str, subject: str, order_id: str,
@@ -1350,3 +1578,52 @@ def ensure_default_user() -> None:
     if not load_users():
         create_user("admin", "admin123", role="admin")
         print("  [portal] Usuário padrão criado → admin / admin123  ⚠️  ALTERE A SENHA!")
+
+
+# ── Favoritos ────────────────────────────────────────────────────────────────
+
+def list_favorites(username: str) -> list:
+    """IDs das cotações favoritadas por este usuário, mais recentes primeiro."""
+    with db.get_cursor() as cur:
+        cur.execute(
+            "SELECT quote_id FROM favorites WHERE username = %s ORDER BY created_at DESC",
+            (username,),
+        )
+        return [r["quote_id"] for r in cur.fetchall()]
+
+
+def is_favorite(username: str, quote_id: str) -> bool:
+    with db.get_cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM favorites WHERE username = %s AND quote_id = %s",
+            (username, quote_id),
+        )
+        return cur.fetchone() is not None
+
+
+def add_favorite(username: str, quote_id: str) -> None:
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO favorites (username, quote_id) VALUES (%s, %s)
+            ON CONFLICT (username, quote_id) DO NOTHING
+            """,
+            (username, quote_id),
+        )
+
+
+def remove_favorite(username: str, quote_id: str) -> None:
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            "DELETE FROM favorites WHERE username = %s AND quote_id = %s",
+            (username, quote_id),
+        )
+
+
+def toggle_favorite(username: str, quote_id: str) -> bool:
+    """Alterna o favorito e retorna o novo estado (True = favoritado)."""
+    if is_favorite(username, quote_id):
+        remove_favorite(username, quote_id)
+        return False
+    add_favorite(username, quote_id)
+    return True

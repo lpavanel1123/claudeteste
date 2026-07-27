@@ -137,7 +137,8 @@ def profile_password():
 @app.route("/")
 @login_required
 def dashboard():
-    return render_template("dashboard.html", stats=data_store.get_stats())
+    return render_template("dashboard.html", stats=data_store.get_stats(),
+                           pending=data_store.get_pending_items())
 
 
 @app.route("/api/stats")
@@ -153,20 +154,65 @@ def api_forecast():
     return jsonify(data_store.get_delivery_forecasts(after))
 
 
+@app.route("/api/pending-items")
+@login_required
+def api_pending_items_internal():
+    """Versão para uso interno do portal (sessão logada), consumida pelo
+    polling da seção 'Pendências' no Dashboard. Ver /api/v1/pending-items
+    para a versão com X-API-Key destinada ao Bot-rotina."""
+    return jsonify(data_store.get_pending_items())
+
+
+@app.context_processor
+def inject_pending_count():
+    ctx = {"pending_vendor_days": data_store.VENDOR_RESPONSE_WARN_DAYS}
+    if "user" in session:
+        ctx["pending_count"] = data_store.get_pending_count_cached()
+    return ctx
+
+
 # ── Quotes ────────────────────────────────────────────────────────────────────
 
-@app.route("/quotes")
+@app.route("/search")
 @login_required
-def quotes():
+def search_global():
+    """Busca global (navbar, qualquer página): aceita ID da cotação, ou um
+    valor de ID de vendor/projeto (NTT#####, ETC ####/logicalis_id, PRJ.../
+    projeto_id_vale, order_id, deal_id). Sem match exato, cai para a busca
+    por substring já existente em /quotes (assunto/requisitante/departamento)."""
+    term = request.args.get("q", "").strip()
+    if not term:
+        return redirect(url_for("quotes"))
+
+    if data_store.get_extraction_by_id(term):
+        return redirect(url_for("quote_detail", quote_id=term))
+
+    for field in data_store.DEAL_FIELDS:
+        found = data_store.find_quote_by_deal_field(field["key"], term)
+        if found:
+            return redirect(url_for("quote_detail", quote_id=found))
+
+    return redirect(url_for("quotes", q=term))
+
+
+def _load_and_filter_quotes(args, username: str) -> dict:
+    """Carrega, anota (_status/_fornecedor/_awaiting_vendor/_vencido/etapa) e
+    filtra as cotações conforme os query params — reaproveitado por /quotes
+    (HTML) e /quotes/export.csv (mesmo resultado, dois formatos)."""
     all_quotes  = data_store.load_extractions()
     annotations = data_store.load_annotations()
     timelines   = data_store.load_timelines()
+    deals       = data_store.load_deals()
 
-    tipo_f       = request.args.get("tipo", "")
-    status_f     = request.args.get("status", "")
-    tl_step_f    = request.args.get("tl_step", "")
-    fornecedor_f = request.args.get("fornecedor", "")
-    search       = request.args.get("q", "").lower()
+    tipo_f       = args.get("tipo", "")
+    status_f     = args.get("status", "")
+    tl_step_f    = args.get("tl_step", "")
+    fornecedor_f = args.get("fornecedor", "")
+    search       = args.get("q", "").lower()
+    vencido_f    = args.get("vencido", "")
+    sem_forn_f   = args.get("sem_forn", "")
+    favoritos_f  = args.get("favoritos", "")
+    favorite_ids = set(data_store.list_favorites(username))
 
     all_fornecedores = sorted({
         ann.get("fornecedor", "").strip()
@@ -180,6 +226,26 @@ def quotes():
         q["_valor"]       = ann.get("valor_total") or ""
         q["_resp"]        = ann.get("responsavel_interno", "")
         q["_fornecedor"]  = ann.get("fornecedor", "")
+
+        # Fornecedor sem resposta há mais de VENDOR_RESPONSE_WARN_DAYS (ver Pendências)
+        q["_awaiting_vendor"] = False
+        if q["_fornecedor"] in ("NTT", "Logicalis") and not deals.get(q["id"], {}).get("response_received_at"):
+            age_sent = data_store._days_since(q.get("date"))
+            if age_sent is not None and age_sent > data_store.VENDOR_RESPONSE_WARN_DAYS:
+                q["_awaiting_vendor"] = True
+
+        # Prazo vencido, ainda não avançado (quick-filter "Vencidos", ver Pendências)
+        q["_vencido"] = False
+        if q.get("request_type") == "Pedido":
+            tl_for_forecast = timelines.get(q["id"], {"dates": {}})
+            if not tl_for_forecast.get("dates", {}).get("entrega_parceiro"):
+                forecast, _ = data_store.compute_auto_forecast(q, tl_for_forecast, deals.get(q["id"], {}))
+                if forecast:
+                    try:
+                        from datetime import date as _date
+                        q["_vencido"] = _date.fromisoformat(str(forecast)[:10]) < _date.today()
+                    except ValueError:
+                        pass
 
         # Compute current timeline step
         request_type = q.get("request_type", "Cotação")
@@ -211,6 +277,12 @@ def quotes():
             continue
         if fornecedor_f and q["_fornecedor"] != fornecedor_f:
             continue
+        if vencido_f and not q["_vencido"]:
+            continue
+        if sem_forn_f and q["_fornecedor"]:
+            continue
+        if favoritos_f and q["id"] not in favorite_ids:
+            continue
         if search:
             haystack = " ".join([
                 q.get("subject", ""), q.get("from", ""),
@@ -223,12 +295,62 @@ def quotes():
     # Collect unique tl_step labels for filter dropdown
     all_tl_labels = sorted({q["_tl_label"] for q in result})
 
+    return {
+        "quotes": result,
+        "tipo_f": tipo_f, "status_f": status_f, "tl_step_f": tl_step_f,
+        "fornecedor_f": fornecedor_f, "search": search,
+        "vencido_f": vencido_f, "sem_forn_f": sem_forn_f, "favoritos_f": favoritos_f,
+        "tl_step_labels": all_tl_labels, "fornecedores": all_fornecedores,
+        "favorite_ids": favorite_ids,
+    }
+
+
+@app.route("/quotes")
+@login_required
+def quotes():
+    ctx = _load_and_filter_quotes(request.args, session["user"])
     return render_template(
-        "quotes.html", quotes=result,
-        tipo_f=tipo_f, status_f=status_f, tl_step_f=tl_step_f, fornecedor_f=fornecedor_f, search=search,
-        statuses=STATUSES, tl_step_labels=all_tl_labels, fornecedores=all_fornecedores,
-        is_owner=(session.get("role") == "owner"),
+        "quotes.html",
+        statuses=STATUSES, is_owner=(session.get("role") == "owner"),
+        **ctx,
     )
+
+
+@app.route("/quotes/export.csv")
+@login_required
+def quotes_export_csv():
+    """Exporta exatamente o que /quotes mostraria com os mesmos query params
+    (filtros e quick filters), reaproveitando _load_and_filter_quotes."""
+    import csv
+    import io
+
+    ctx = _load_and_filter_quotes(request.args, session["user"])
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["ID", "Data", "Requisitante", "Assunto", "Tipo", "Departamento",
+                      "Status", "Fornecedor", "Etapa Atual", "Responsável Interno"])
+    for q in ctx["quotes"]:
+        writer.writerow([
+            q["id"], q.get("date", "")[:10],
+            q.get("requester_name") or q.get("from", ""),
+            q.get("subject", ""), q.get("request_type", ""), q.get("department", ""),
+            q["_status"], q["_fornecedor"], q["_tl_label"], q["_resp"],
+        ])
+
+    # BOM UTF-8 para o Excel reconhecer acentuação corretamente
+    resp = app.response_class("﻿" + buf.getvalue(), mimetype="text/csv")
+    resp.headers["Content-Disposition"] = "attachment; filename=cotacoes.csv"
+    return resp
+
+
+@app.route("/quotes/<quote_id>/favorite", methods=["POST"])
+@login_required
+def quote_favorite_toggle(quote_id):
+    if not data_store.get_extraction_by_id(quote_id):
+        return jsonify({"error": "not found"}), 404
+    is_fav = data_store.toggle_favorite(session["user"], quote_id)
+    return jsonify({"ok": True, "favorite": is_fav})
 
 
 @app.route("/quotes/delete", methods=["POST"])
@@ -261,12 +383,24 @@ def quote_detail(quote_id):
     # ── Cálculo automático de previsão de conclusão ──
     auto_forecast, aggressor = data_store.compute_auto_forecast(quote, timeline, deal)
 
+    awaiting_vendor = False
+    fornecedor = (ann.get("fornecedor") or "").strip()
+    if fornecedor in ("NTT", "Logicalis") and not deal.get("response_received_at"):
+        age_sent = data_store._days_since(quote.get("date"))
+        awaiting_vendor = age_sent is not None and age_sent > data_store.VENDOR_RESPONSE_WARN_DAYS
+
+    related_quotes = data_store.find_related_quotes_other_vendor(quote_id)
+    distinct_names = data_store.get_distinct_names()
+
     return render_template("quote_detail.html", quote=quote, ann=ann, corr=corr,
                            statuses=STATUSES, correctable=data_store.CORRECTABLE_FIELDS,
                            timeline=timeline, timeline_steps=tl_steps,
                            deal=deal, deal_fields=data_store.DEAL_FIELDS,
                            auto_forecast=auto_forecast, aggressor=aggressor,
-                           prev_id=prev_id, next_id=next_id)
+                           prev_id=prev_id, next_id=next_id,
+                           awaiting_vendor=awaiting_vendor,
+                           related_quotes=related_quotes,
+                           distinct_names=distinct_names)
 
 
 @app.route("/quotes/new", methods=["GET", "POST"])
@@ -323,8 +457,24 @@ def quote_new():
         flash("Cotação criada com sucesso!", "success")
         return redirect(url_for("quote_detail", quote_id=quote_id))
 
+    prefill = None
+    from_id = request.args.get("from_id", "").strip()
+    if from_id:
+        source = data_store.get_extraction_by_id(from_id)
+        if source:
+            source_ann = data_store.load_annotations().get(from_id, {})
+            prefill = {
+                "department":            source.get("department", ""),
+                "cnpj":                  source.get("cnpj", ""),
+                "smart_account":         source.get("smart_account", ""),
+                "smart_account_domain":  source.get("smart_account_domain", ""),
+                "virtual_account":       source.get("virtual_account", ""),
+                "fornecedor":            source_ann.get("fornecedor", ""),
+            }
+
     return render_template("new_quote.html", statuses=STATUSES,
-                           now=datetime.now().strftime("%Y-%m-%dT%H:%M"))
+                           now=datetime.now().strftime("%Y-%m-%dT%H:%M"),
+                           prefill=prefill)
 
 
 @app.route("/quotes/<quote_id>/products", methods=["POST"])
@@ -687,6 +837,7 @@ def cisco():
         fx_rate=forecast_data["fx_rate"],
         fx_rate_is_live=forecast_data["fx_rate_is_live"],
         forecast_statuses=FORECAST_STATUSES,
+        distinct_names=data_store.get_distinct_names(),
     )
 
 
@@ -965,6 +1116,16 @@ def api_orders():
     return jsonify(result)
 
 
+@app.route("/api/v1/pending-items")
+@_api_key_required
+def api_pending_items():
+    """Itens que precisam de atenção humana (prazo vencido, parado na etapa,
+    fornecedor sem resposta, pendente de revisão). Mesmo dado usado no badge
+    'Pendências' do portal — pronto para o Bot-rotina consumir e montar um
+    resumo (ex: Webex), sem precisar duplicar essa lógica."""
+    return jsonify(data_store.get_pending_items())
+
+
 @app.route("/api/v1/leadtime", methods=["POST"])
 @_api_key_required
 def api_leadtime():
@@ -1010,6 +1171,12 @@ def _service_check(url: str, timeout: int = 4) -> dict:
 @admin_required
 def admin_observability():
     return render_template("admin_observability.html")
+
+
+@app.route("/admin/duplicates")
+@admin_required
+def admin_duplicates():
+    return render_template("admin_duplicates.html", groups=data_store.find_duplicate_groups())
 
 
 @app.route("/api/v1/bot-status", methods=["POST"])

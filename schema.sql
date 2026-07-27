@@ -162,3 +162,11 @@ CREATE TABLE IF NOT EXISTS cisco_forecast (
   updated_at    TIMESTAMP,
   updated_by    TEXT
 );
+
+-- Cotações favoritadas por usuário ("Favoritos" na sidebar)
+CREATE TABLE IF NOT EXISTS favorites (
+  username    TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
+  quote_id    TEXT NOT NULL REFERENCES extractions(id) ON DELETE CASCADE,
+  created_at  TIMESTAMP NOT NULL DEFAULT now(),
+  PRIMARY KEY (username, quote_id)
+);

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Duplicatas — Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-3">
+  <h5 class="page-title mb-0"><i class="fa fa-shield-halved me-2 text-cisco"></i>Administração</h5>
+  <span class="badge bg-cisco text-white ms-1" style="font-size:.7rem">Admin</span>
+</div>
+<ul class="nav nav-tabs mb-4">
+  <li class="nav-item">
+    <a class="nav-link" href="/admin"><i class="fa fa-users me-1"></i>Usuários</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="/admin/import"><i class="fa fa-file-excel me-1"></i>Importar Cotações</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="/admin/observability"><i class="fa fa-heart-pulse me-1"></i>Observabilidade</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link active" href="/admin/duplicates"><i class="fa fa-clone me-1"></i>Duplicatas</a>
+  </li>
+</ul>
+
+<div class="card shadow-sm cisco-card">
+  <div class="card-header d-flex align-items-center justify-content-between">
+    <span><i class="fa-solid fa-clone me-2 text-muted"></i>Possíveis Duplicatas</span>
+    <span class="badge bg-secondary">{{ groups|length }} grupo(s)</span>
+  </div>
+  <div class="card-body p-0">
+    <p class="text-muted small px-3 pt-3 mb-0">
+      Cotações com o mesmo assunto (normalizado) e o mesmo fornecedor — geralmente histórico anterior
+      à correlação automática de email. Isto é <strong>só um relatório para revisão manual</strong>;
+      nenhuma mesclagem é feita automaticamente.
+    </p>
+    {% if not groups %}
+    <div class="empty-state">
+      <i class="fa-solid fa-circle-check empty-icon"></i>Nenhuma duplicata aparente encontrada.
+    </div>
+    {% else %}
+    {% for g in groups %}
+    <div class="px-3 py-3 {{ 'border-top' if not loop.first else 'mt-2' }}">
+      <div class="small text-muted mb-2">
+        <span class="badge" style="background:rgba(0,80,115,.1);color:#005073">{{ g.fornecedor }}</span>
+        <code class="ms-1">{{ g.normalized }}</code>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead class="table-light">
+            <tr><th>Data</th><th>Assunto original</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for item in g.quotes %}
+            <tr>
+              <td class="text-muted small text-nowrap">{{ item.date[:10] }}</td>
+              <td class="small">{{ item.subject | truncate(70) }}</td>
+              <td><span class="badge bg-secondary">{{ item.status }}</span></td>
+              <td class="text-end">
+                <a href="{{ url_for('quote_detail', quote_id=item.quote_id) }}" class="btn btn-sm btn-outline-secondary">
+                  <i class="fa fa-eye"></i>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

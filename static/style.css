@@ -92,6 +92,24 @@ body    { background: var(--bg); color: var(--text); }
 /* ── Main content ── */
 .content { margin-left: var(--sidebar-w); padding: 2rem; flex: 1; }
 
+/* ── Mobile (sidebar vira gaveta) ── */
+.sidebar-toggle { display: none; }
+.sidebar-backdrop {
+  display: none; position: fixed; inset: 56px 0 0 0; z-index: 1040;
+  background: rgba(0,0,0,.4);
+}
+@media (max-width: 768px) {
+  .sidebar-toggle { display: inline-flex; }
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform .25s ease;
+    z-index: 1045;
+  }
+  .sidebar.show { transform: translateX(0); }
+  .sidebar-backdrop.show { display: block; }
+  .content { margin-left: 0; padding: 1rem; }
+}
+
 /* ── Cards ── */
 .cisco-card {
   border: 1px solid var(--border) !important;

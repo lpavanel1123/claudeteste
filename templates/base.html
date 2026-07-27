@@ -14,10 +14,25 @@
 <!-- Cisco-style Navbar -->
 <nav class="navbar cisco-navbar fixed-top px-3">
   <div class="d-flex align-items-center gap-2">
+    {% if session.get('user') %}
+    <button type="button" class="btn btn-sm sidebar-toggle p-1 me-1" style="color:#ccc" onclick="toggleSidebar()">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+    {% endif %}
     <span class="brand-badge"><i class="fa-solid fa-diagram-project"></i></span>
     <a class="navbar-brand text-white" href="/">Portal de Cotações</a>
     <span class="badge bg-cisco-bright text-white ms-1" style="font-size:.65rem;padding:.25em .55em;border-radius:3px">BETA</span>
   </div>
+  {% if session.get('user') %}
+  <form method="GET" action="{{ url_for('search_global') }}" class="d-none d-md-block" style="width:320px">
+    <div class="input-group input-group-sm">
+      <span class="input-group-text bg-transparent border-end-0" style="border-color:#444"><i class="fa fa-search text-muted"></i></span>
+      <input type="search" name="q" class="form-control border-start-0"
+             placeholder="Buscar ID, NTT#####, PRJ..., assunto..."
+             style="background:transparent;color:#eee;border-color:#444">
+    </div>
+  </form>
+  {% endif %}
   <div class="d-flex align-items-center gap-2">
     <div class="dropdown">
       <button class="btn btn-sm dropdown-toggle d-flex align-items-center gap-2"
@@ -80,14 +95,24 @@
   </div>
 </div>
 
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
+
 <div class="wrapper">
   <!-- Sidebar -->
-  <nav class="sidebar">
+  <nav class="sidebar" id="sidebar">
     <div class="section-label">Navegação</div>
     <ul class="nav flex-column">
       <li class="nav-item">
         <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="/">
           <i class="fa-solid fa-chart-line fa-fw"></i> Dashboard
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link d-flex align-items-center" href="/#pendencias">
+          <i class="fa-solid fa-triangle-exclamation fa-fw"></i> Pendências
+          {% if pending_count %}
+          <span class="badge bg-danger rounded-pill ms-auto">{{ pending_count }}</span>
+          {% endif %}
         </a>
       </li>
       <li class="nav-item">
@@ -98,6 +123,11 @@
       <li class="nav-item">
         <a class="nav-link {% if request.path == '/quotes/new' %}active{% endif %}" href="/quotes/new">
           <i class="fa-solid fa-circle-plus fa-fw"></i> Nova Cotação
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/quotes?favoritos=1">
+          <i class="fa-solid fa-star fa-fw"></i> Favoritos
         </a>
       </li>
       <li class="nav-item">
@@ -136,6 +166,11 @@
             <li class="nav-item">
               <a class="nav-link {% if request.path == '/admin/observability' %}active{% endif %}" href="/admin/observability">
                 <i class="fa-solid fa-heart-pulse fa-fw"></i> Observabilidade
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.path == '/admin/duplicates' %}active{% endif %}" href="/admin/duplicates">
+                <i class="fa-solid fa-clone fa-fw"></i> Duplicatas
               </a>
             </li>
           </ul>
@@ -178,6 +213,11 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 {% block scripts %}{% endblock %}
 <script>
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('show');
+  document.getElementById('sidebarBackdrop').classList.toggle('show');
+}
+
 document.getElementById('btn-salvar-senha')?.addEventListener('click', async () => {
   const errEl = document.getElementById('senha-error');
   const okEl  = document.getElementById('senha-success');

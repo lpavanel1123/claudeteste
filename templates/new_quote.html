@@ -7,6 +7,13 @@
   <h5 class="page-title mb-0">Nova Cotação Manual</h5>
 </div>
 
+{% if prefill %}
+<div class="alert alert-info py-2 small d-flex align-items-center gap-2 mb-4">
+  <i class="fa-solid fa-copy"></i>
+  Departamento, CNPJ, Smart Account e Fornecedor pré-preenchidos a partir da cotação de origem — revise antes de salvar.
+</div>
+{% endif %}
+
 <form method="POST" action="/quotes/new" id="form-nova">
 <div class="row g-4">
 
@@ -71,11 +78,13 @@
           </div>
           <div class="col-md-6">
             <label class="form-label small fw-semibold">Departamento</label>
-            <input type="text" name="department" class="form-control form-control-sm" placeholder="TI - Infraestrutura">
+            <input type="text" name="department" class="form-control form-control-sm" placeholder="TI - Infraestrutura"
+                   value="{{ prefill.department if prefill else '' }}">
           </div>
           <div class="col-md-6">
             <label class="form-label small fw-semibold">CNPJ</label>
-            <input type="text" name="cnpj" class="form-control form-control-sm" placeholder="00.000.000/0001-00">
+            <input type="text" name="cnpj" class="form-control form-control-sm" placeholder="00.000.000/0001-00"
+                   value="{{ prefill.cnpj if prefill else '' }}">
           </div>
         </div>
       </div>
@@ -88,15 +97,18 @@
         <div class="row g-3">
           <div class="col-md-4">
             <label class="form-label small fw-semibold">Smart Account</label>
-            <input type="text" name="smart_account" class="form-control form-control-sm" placeholder="BR (Brasil)">
+            <input type="text" name="smart_account" class="form-control form-control-sm" placeholder="BR (Brasil)"
+                   value="{{ prefill.smart_account if prefill else '' }}">
           </div>
           <div class="col-md-4">
             <label class="form-label small fw-semibold">Smart Account Domain</label>
-            <input type="text" name="smart_account_domain" class="form-control form-control-sm" placeholder="empresa.com.br">
+            <input type="text" name="smart_account_domain" class="form-control form-control-sm" placeholder="empresa.com.br"
+                   value="{{ prefill.smart_account_domain if prefill else '' }}">
           </div>
           <div class="col-md-4">
             <label class="form-label small fw-semibold">Virtual Account</label>
-            <input type="text" name="virtual_account" class="form-control form-control-sm" placeholder="BR-TI-SP">
+            <input type="text" name="virtual_account" class="form-control form-control-sm" placeholder="BR-TI-SP"
+                   value="{{ prefill.virtual_account if prefill else '' }}">
           </div>
         </div>
       </div>
@@ -169,10 +181,11 @@
         <div class="mb-3">
           <label class="form-label small fw-semibold">Fornecedor</label>
           <select name="fornecedor" class="form-select form-select-sm">
+            {% set forn_atual = prefill.fornecedor if prefill else '' %}
             <option value="">— Selecione —</option>
-            <option value="Logicalis">Logicalis</option>
-            <option value="NTT">NTT</option>
-            <option value="Outros">Outros</option>
+            <option value="Logicalis" {% if forn_atual == 'Logicalis' %}selected{% endif %}>Logicalis</option>
+            <option value="NTT" {% if forn_atual == 'NTT' %}selected{% endif %}>NTT</option>
+            <option value="Outros" {% if forn_atual == 'Outros' %}selected{% endif %}>Outros</option>
           </select>
         </div>
         <div class="mb-4">

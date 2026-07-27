@@ -4,7 +4,26 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h5 class="page-title mb-0"><i class="fa-solid fa-file-invoice me-2 text-primary"></i>Cotações</h5>
-  <span class="badge bg-secondary rounded-pill" id="result-count">{{ quotes|length }} resultado(s)</span>
+  <div class="d-flex align-items-center gap-2">
+    <span class="badge bg-secondary rounded-pill" id="result-count">{{ quotes|length }} resultado(s)</span>
+    <a href="{{ url_for('quotes_export_csv') }}?{{ request.query_string.decode() }}"
+       class="btn btn-sm btn-outline-secondary" title="Exporta os resultados filtrados abaixo">
+      <i class="fa-solid fa-file-csv me-1"></i>Exportar CSV
+    </a>
+  </div>
+</div>
+
+<!-- Quick filters -->
+<div class="d-flex gap-2 mb-3 flex-wrap">
+  <a href="/quotes?vencido=1" class="btn btn-sm {{ 'btn-danger' if vencido_f else 'btn-outline-danger' }}">
+    <i class="fa-solid fa-clock me-1"></i>Vencidos
+  </a>
+  <a href="/quotes?sem_forn=1" class="btn btn-sm {{ 'btn-secondary' if sem_forn_f else 'btn-outline-secondary' }}">
+    <i class="fa-solid fa-circle-question me-1"></i>Sem fornecedor definido
+  </a>
+  {% if vencido_f or sem_forn_f or favoritos_f %}
+  <a href="/quotes" class="btn btn-sm btn-link text-muted"><i class="fa fa-times me-1"></i>Limpar filtro rápido</a>
+  {% endif %}
 </div>
 
 <!-- Filtros -->
@@ -142,6 +161,12 @@
           <td class="text-nowrap small text-muted" data-col="0">{{ q.date[:10] }}</td>
           <td class="small" data-col="1">{{ (q.get('requester_name') or q.get('from') or '—') | truncate(30) }}</td>
           <td data-col="2">
+            <button type="button" class="btn btn-sm btn-link p-0 me-1 btn-favorite"
+                    onclick="event.stopPropagation(); toggleFavorite(this, '{{ q.id }}')"
+                    data-id="{{ q.id }}" title="Favoritar">
+              <i class="fa-{{ 'solid' if q.id in favorite_ids else 'regular' }} fa-star"
+                 style="color:{{ '#ffbe00' if q.id in favorite_ids else '#ccc' }}"></i>
+            </button>
             <span class="fw-semibold small editable-subject"
                   data-id="{{ q.id }}"
                   data-field="subject"
@@ -161,6 +186,10 @@
           <td data-col="5">
             {% set sc = {'Em Aberto':'secondary','Em Análise':'warning','Aprovada':'success','Rejeitada':'danger','Ganha':'success','Perdida':'dark'} %}
             <span class="badge badge-status bg-{{ sc.get(q._status, 'secondary') }}">{{ q._status }}</span>
+            {% if q._awaiting_vendor %}
+            <i class="fa-solid fa-circle-exclamation text-danger ms-1"
+               title="Fornecedor sem resposta há mais de {{ pending_vendor_days }} dias"></i>
+            {% endif %}
           </td>
 
           <!-- Etapa Timeline -->
@@ -201,6 +230,24 @@
 
 {% block scripts %}
 <script>
+// ── Favoritos ─────────────────────────────────────────────────────────────────
+async function toggleFavorite(btn, quoteId) {
+  const icon = btn.querySelector('i');
+  try {
+    const resp = await fetch(`/quotes/${quoteId}/favorite`, {method: 'POST'});
+    const data = await resp.json();
+    if (data.favorite) {
+      icon.classList.remove('fa-regular');
+      icon.classList.add('fa-solid');
+      icon.style.color = '#ffbe00';
+    } else {
+      icon.classList.remove('fa-solid');
+      icon.classList.add('fa-regular');
+      icon.style.color = '#ccc';
+    }
+  } catch (e) { /* silencioso — não interrompe a navegação da lista */ }
+}
+
 // ── Toggle de colunas ─────────────────────────────────────────────────────────
 const STORAGE_KEY = 'quotes_cols_v2';
 const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
