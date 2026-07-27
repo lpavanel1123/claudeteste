@@ -152,7 +152,8 @@ No painel do Cloudmailin:
 
 | Tela | Funcionalidade |
 |---|---|
-| **Dashboard** | KPIs + gráficos com atualização automática + seção Operacional + **Pendências** |
+| **Dashboard** | KPIs + gráficos com atualização automática + seção Operacional (o KPI "Pendências" só mostra o número — detalhamento fica em `/pendencias`) |
+| **Pendências** | Detalhamento completo dos 4 grupos (prazo vencido, parado na etapa, fornecedor sem resposta, pendente de revisão) |
 | **Cotações** | Lista filtrável com toggle de colunas, edição inline de assunto, coluna de Etapa Timeline, favoritos e exportação CSV |
 | **Detalhe** | Visão completa com todas as seções abaixo |
 | **Nova Cotação** | Formulário para inclusão manual completa (ou pré-preenchido via "Duplicar") |
@@ -255,8 +256,8 @@ Regras:
 | **Pendente de revisão** | Entradas `deadline_check_pending` no Histórico sem um `auto_advance_deadline` posterior para o mesmo `quote_id` |
 
 **Onde aparece:**
-- Badge numérico na sidebar (`data_store.get_pending_count_cached`, cache de 60s — a função completa faz 5 consultas e evitamos recalcular a cada navegação de página)
-- Seção "Pendências" no Dashboard, atualizada a cada 30s via `GET /api/pending-items` (sessão logada)
+- Badge numérico na sidebar e no 4º KPI card do Dashboard (`data_store.get_pending_count_cached`, cache de 60s — a função completa faz 5 consultas e evitamos recalcular a cada navegação de página)
+- Página dedicada **`/pendencias`** com o detalhamento completo por grupo, atualizada a cada 30s via `GET /api/pending-items` (sessão logada) — o Dashboard mostra só o número; clicar no card leva pra essa página
 - `GET /api/v1/pending-items` — mesma informação, protegida por `X-API-Key` (`_api_key_required`), pronta para o Bot-rotina consumir e montar um resumo (Webex, por exemplo) sem precisar duplicar essa lógica
 
 ---
@@ -433,7 +434,8 @@ Pós-migração para Postgres — não há mais `data/*.json` (schema completo e
 ├── templates/
 │   ├── base.html               # Layout com sidebar (mobile: vira gaveta), navbar + busca global
 │   ├── login.html
-│   ├── dashboard.html           # KPIs + gráficos + seção Operacional + Pendências
+│   ├── dashboard.html           # KPIs (incl. número de Pendências) + gráficos + seção Operacional
+│   ├── pendencias.html          # Detalhamento completo das Pendências
 │   ├── quotes.html              # Lista: filtros, quick filters, favoritos, export CSV
 │   ├── quote_detail.html        # Detalhe + Cotações Relacionadas + Salvar Tudo + Duplicar
 │   ├── new_quote.html           # Formulário de inclusão manual (aceita ?from_id= para duplicar)

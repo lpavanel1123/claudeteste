@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Pendências — Portal de Cotações{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h5 class="page-title mb-0"><i class="fa-solid fa-triangle-exclamation me-2" style="color:var(--cisco-warn)"></i>Pendências</h5>
+    <small class="text-muted">Itens que precisam de atenção — prazo vencido, parado na etapa, fornecedor sem resposta ou pendente de revisão</small>
+  </div>
+  <span class="badge bg-danger rounded-pill" id="pend-total" style="font-size:1rem">{{ pending.total }}</span>
+</div>
+
+<div class="card shadow-sm cisco-card">
+  <div class="card-body" id="pend-body">
+    <div class="text-muted small fst-italic">Carregando…</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function renderPending(p) {
+  document.getElementById('pend-total').textContent = p.total;
+  const groups = [
+    { key: 'overdue_forecast', label: 'Prazo vencido, não avançado', icon: 'fa-clock',           color: '#e2231a' },
+    { key: 'stuck_stage',      label: 'Parado na etapa há muito tempo', icon: 'fa-hourglass-half', color: '#ffbe00' },
+    { key: 'awaiting_vendor',  label: 'Fornecedor sem resposta',      icon: 'fa-envelope',        color: '#049FD9' },
+    { key: 'pending_review',   label: 'Pendente de revisão',          icon: 'fa-flag',            color: '#6f42c1' },
+  ];
+  const body = document.getElementById('pend-body');
+  const sections = groups.map(g => {
+    const items = p[g.key] || [];
+    if (!items.length) return '';
+    const rows = items.map(it => `
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <a href="/quotes/${it.quote_id}" class="text-decoration-none small fw-semibold">${it.subject || it.quote_id}</a>
+        <span class="text-muted small">${it.dias != null ? it.dias + 'd' : ''}</span>
+      </div>`).join('');
+    return `
+      <div class="mb-4">
+        <div class="fw-bold mb-2" style="color:${g.color}"><i class="fa-solid ${g.icon} me-1"></i>${g.label} (${items.length})</div>
+        ${rows}
+      </div>`;
+  }).join('');
+  body.innerHTML = sections || '<div class="empty-state py-4"><i class="fa-solid fa-circle-check empty-icon"></i>Nada pendente no momento</div>';
+}
+
+async function loadPending() {
+  try {
+    const p = await (await fetch('/api/pending-items')).json();
+    renderPending(p);
+  } catch(_) {}
+}
+
+renderPending({{ pending | tojson }});
+setInterval(loadPending, 30000);
+</script>
+{% endblock %}

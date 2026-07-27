@@ -137,8 +137,13 @@ def profile_password():
 @app.route("/")
 @login_required
 def dashboard():
-    return render_template("dashboard.html", stats=data_store.get_stats(),
-                           pending=data_store.get_pending_items())
+    return render_template("dashboard.html", stats=data_store.get_stats())
+
+
+@app.route("/pendencias")
+@login_required
+def pendencias():
+    return render_template("pendencias.html", pending=data_store.get_pending_items())
 
 
 @app.route("/api/stats")
