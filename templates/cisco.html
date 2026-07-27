@@ -28,7 +28,14 @@
 }
 .mk-hero h5 { color: #fff; margin: 0; font-weight: 700; letter-spacing: .01em; }
 .mk-hero .mk-hero-sub { color: rgba(255,255,255,.75); font-size: .78rem; }
-.mk-logo-chip { background: #fff; border-radius: 10px; padding: .4rem .65rem; display: flex; align-items: center; }
+.mk-logo-chip {
+  background: #fff; border-radius: 10px; padding: .45rem .75rem;
+  display: flex; align-items: center; line-height: 1;
+}
+.mk-logo-chip .mk-logo-text {
+  font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-weight: 800; font-size: 1.2rem; letter-spacing: -.02em; color: #049FD9;
+}
 .meraki .nav-tabs { border: none; gap: .45rem; }
 .meraki .nav-tabs .nav-link {
   border: 1px solid var(--mk-border); border-radius: 999px; background: #fff;
@@ -56,6 +63,8 @@
 .mk-chip-vbm     { background: rgba(0,188,235,.15);  color: #00758f; }
 .mk-chip-obso    { background: rgba(255,190,0,.18);  color: #8a6d00; }
 .mk-chip-prio    { background: rgba(226,35,26,.1);   color: #b71c14; }
+.mk-chip-clear   { cursor: pointer; }
+.mk-chip-clear i { cursor: pointer; }
 .mk-status { display: inline-block; border-radius: 999px; padding: .2rem .62rem; font-size: .7rem; font-weight: 600; }
 .mk-status-commit   { background: rgba(103,179,70,.16); color: #3f7d26; }
 .mk-status-best     { background: rgba(4,159,217,.14);  color: #036a91; }
@@ -84,14 +93,19 @@
 .meraki .btn-outline-primary { border-color: var(--mk-border); color: var(--mk-muted); font-weight: 600; }
 .mk-next-action { max-width: 220px; font-size: .78rem; }
 .mk-updated { font-size: .66rem; color: var(--mk-muted); }
+.mk-fx-form input[type="text"] { width: 90px; }
+#fc-proj-toolbar .form-control, #fc-proj-toolbar .form-select { font-size: .8rem; }
+.fc-sort { cursor: pointer; user-select: none; white-space: nowrap; }
+.fc-sort-arrow { opacity: .35; font-size: .65rem; margin-left: 4px; }
+.fc-sort.fc-sort-active .fc-sort-arrow { opacity: 1; }
+.mk-pivot-row { cursor: pointer; }
 </style>
 
 <!-- Header -->
 <div class="mk-hero">
   <div class="d-flex align-items-center gap-3">
     <div class="mk-logo-chip">
-      <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Cisco_logo_blue_2016.svg/320px-Cisco_logo_blue_2016.svg.png"
-           alt="Cisco" style="height:26px">
+      <span class="mk-logo-text">cisco</span>
     </div>
     <div>
       <h5>Cisco</h5>
@@ -131,8 +145,13 @@
 
 <small class="text-muted d-block mb-1">Somatória de Unit Net Price × Qty por categoria — tudo em USD</small>
 <small class="text-muted d-block mb-3">
+  {% if stats.fx_rate_is_manual %}
+  <i class="fa-solid fa-pen text-cisco me-1"></i>
+  Produtos "Nacional" convertidos de Real pela cotação definida manualmente: 1 USD = R$ {{ "%.2f"|format(stats.fx_rate) }}
+  {% else %}
   <i class="fa-solid {{ 'fa-circle-check text-success' if stats.fx_rate_is_live else 'fa-triangle-exclamation text-warning' }} me-1"></i>
   Produtos "Nacional" convertidos de Real pela cotação {{ 'atual' if stats.fx_rate_is_live else '(última conhecida — falha ao buscar a atual)' }}: 1 USD = R$ {{ "%.2f"|format(stats.fx_rate) }}
+  {% endif %}
 </small>
 
 <!-- KPI cards -->
@@ -430,10 +449,31 @@
      ══════════════════════════════════════════════════════════════════════ -->
 <div class="tab-pane fade" id="tab-forecast" role="tabpanel">
 
-  <small class="text-muted d-block mb-3">
-    <i class="fa-solid {{ 'fa-circle-check text-success' if fx_rate_is_live else 'fa-triangle-exclamation text-warning' }} me-1"></i>
-    Valores em USD — produtos "Nacional" convertidos de Real pela cotação {{ 'atual' if fx_rate_is_live else '(última conhecida — falha ao buscar a atual)' }}: 1 USD = R$ {{ "%.2f"|format(fx_rate) }}
-  </small>
+  <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
+    <small class="text-muted">
+      {% if fx_rate_is_manual %}
+      <i class="fa-solid fa-pen text-cisco me-1"></i>
+      Valores em USD — cotação definida manualmente{% if fx_rate_updated_by %} por {{ fx_rate_updated_by }}{% endif %}:
+      {% else %}
+      <i class="fa-solid {{ 'fa-circle-check text-success' if fx_rate_is_live else 'fa-triangle-exclamation text-warning' }} me-1"></i>
+      Valores em USD — produtos "Nacional" convertidos de Real pela cotação {{ 'atual' if fx_rate_is_live else '(última conhecida — falha ao buscar a atual)' }}:
+      {% endif %}
+    </small>
+    <form method="POST" action="/cisco/forecast/fx-rate" class="d-flex align-items-center gap-1 mk-fx-form">
+      <span class="text-muted small">1 USD = R$</span>
+      <input type="text" inputmode="decimal" name="rate" id="fx-rate-input"
+             class="form-control form-control-sm" value="{{ '%.2f'|format(fx_rate) }}"
+             title="Cotação manual do dólar (aceita vírgula ou ponto)">
+      <button type="submit" class="btn btn-sm btn-outline-secondary" title="Salvar cotação manual">
+        <i class="fa-solid fa-check"></i>
+      </button>
+      {% if fx_rate_is_manual %}
+      <button type="submit" name="action" value="clear" class="btn btn-sm btn-outline-secondary" title="Voltar para a cotação automática">
+        <i class="fa-solid fa-rotate-left"></i>
+      </button>
+      {% endif %}
+    </form>
+  </div>
 
   <!-- Controles: visão + parceiro + estágios + totais -->
   <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-3">
@@ -477,86 +517,64 @@
       Forecast de Vendas por Projeto
       <span class="text-muted small fw-normal ms-2">Valor = Price List × (1 − desconto médio)</span>
     </div>
+    {% if sales_forecast %}
+    <div class="p-3 border-bottom d-flex flex-wrap align-items-center gap-2" id="fc-proj-toolbar">
+      <input type="search" id="fcSearch" class="form-control form-control-sm" style="max-width:200px"
+             placeholder="Buscar projeto, líder ou PM…">
+      <select id="fcDeptSelect" class="form-select form-select-sm" style="max-width:180px">
+        <option value="">Departamento (todos)</option>
+      </select>
+      <select id="fcArchSelect" class="form-select form-select-sm" style="max-width:180px">
+        <option value="">Arquitetura (todas)</option>
+      </select>
+      <div class="d-flex align-items-center gap-1">
+        <input type="number" id="fcValorMin" class="form-control form-control-sm" style="width:110px" placeholder="Valor mín.">
+        <span class="text-muted small">–</span>
+        <input type="number" id="fcValorMax" class="form-control form-control-sm" style="width:110px" placeholder="Valor máx.">
+      </div>
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                data-bs-toggle="dropdown" data-bs-auto-close="outside">
+          <i class="fa-solid fa-tags fa-fw me-1"></i>Classificação
+        </button>
+        <ul class="dropdown-menu p-2" style="min-width:220px">
+          <li><div class="form-check"><input class="form-check-input fc-flag" type="checkbox" value="projeto_capital" id="ff-flag-capital">
+            <label class="form-check-label small" for="ff-flag-capital">Capital</label></div></li>
+          <li><div class="form-check"><input class="form-check-input fc-flag" type="checkbox" value="kec" id="ff-flag-kec">
+            <label class="form-check-label small" for="ff-flag-kec">KEC</label></div></li>
+          <li><div class="form-check"><input class="form-check-input fc-flag" type="checkbox" value="vbm" id="ff-flag-vbm">
+            <label class="form-check-label small" for="ff-flag-vbm">VBM</label></div></li>
+          <li><div class="form-check"><input class="form-check-input fc-flag" type="checkbox" value="projeto_obsolescencia" id="ff-flag-obso">
+            <label class="form-check-label small" for="ff-flag-obso">Obsolescência</label></div></li>
+          <li><div class="form-check"><input class="form-check-input fc-flag" type="checkbox" value="prioridade_quarter" id="ff-flag-prio">
+            <label class="form-check-label small" for="ff-flag-prio">Prioridade Q</label></div></li>
+        </ul>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="fcClearFilters" title="Limpar filtros de Projetos">
+        <i class="fa-solid fa-filter-circle-xmark fa-fw me-1"></i>Limpar
+      </button>
+      <div class="d-flex flex-wrap gap-1 ms-auto" id="fcActiveChips"></div>
+    </div>
+    {% endif %}
     <div class="card-body p-0">
       {% if sales_forecast %}
       <div class="table-responsive">
         <table class="table table-sm align-middle mb-0 small" id="forecastTable">
           <thead class="table-light">
             <tr>
-              <th class="ps-3">Projeto</th>
-              <th class="text-end">Valor do Projeto</th>
-              <th>Booking</th>
+              <th class="ps-3 fc-sort" data-sort="projeto">Projeto <i class="fa-solid fa-sort fc-sort-arrow"></i></th>
+              <th class="text-end fc-sort" data-sort="valor">Valor do Projeto <i class="fa-solid fa-sort fc-sort-arrow"></i></th>
+              <th class="fc-sort" data-sort="booking_date">Booking <i class="fa-solid fa-sort fc-sort-arrow"></i></th>
               <th>DID</th>
               <th>Líder Técnico/Compra</th>
               <th>PM</th>
-              <th>Status</th>
+              <th class="fc-sort" data-sort="status">Status <i class="fa-solid fa-sort fc-sort-arrow"></i></th>
               <th>Próxima Ação</th>
-              <th class="text-center" title="Completude MEDDPICC do deal">MEDDPICC</th>
+              <th class="text-center fc-sort" data-sort="meddpicc_score" title="Completude MEDDPICC do deal">MEDDPICC <i class="fa-solid fa-sort fc-sort-arrow"></i></th>
               <th class="text-center">—</th>
             </tr>
           </thead>
-          <tbody>
-            {% for item in sales_forecast %}
-            <tr data-fornecedor="{{ item.fornecedor | lower }}" data-valor="{{ item.valor }}" data-status="{{ item.status }}">
-              <td class="ps-3">
-                <a class="mk-proj-link" href="/quotes/{{ item.quote_id }}" title="Abrir a cotação">{{ item.projeto }}</a>
-                <div class="d-flex flex-wrap gap-1 mt-1">
-                  {% if item.prioridade_quarter %}<span class="mk-chip mk-chip-prio" title="Prioridade do Quarter"><i class="fa-solid fa-star fa-fw"></i>Prioridade Q</span>{% endif %}
-                  {% if item.projeto_capital %}<span class="mk-chip mk-chip-capital">Capital</span>{% endif %}
-                  {% if item.kec %}<span class="mk-chip mk-chip-kec">KEC</span>{% endif %}
-                  {% if item.vbm %}<span class="mk-chip mk-chip-vbm">VBM</span>{% endif %}
-                  {% if item.projeto_obsolescencia %}<span class="mk-chip mk-chip-obso">Obsolescência</span>{% endif %}
-                </div>
-              </td>
-              <td class="text-end forecast-val" data-val="{{ item.valor }}">
-                —
-                {% if item.valor_origem == 'valor_total' %}
-                <i class="fa-solid fa-file-invoice-dollar text-muted ms-1" style="font-size:.7rem"
-                   title="Sem produtos cadastrados — usou o Valor Total (US$) de Informações Manuais"></i>
-                {% elif item.valor_fallback %}
-                <i class="fa-solid fa-circle-info text-muted ms-1" style="font-size:.7rem"
-                   title="Algum part number sem histórico específico — usou a média geral do fornecedor"></i>
-                {% endif %}
-              </td>
-              <td>
-                {% if item.booking_date %}
-                <span class="mk-datecheck" data-date="{{ item.booking_date }}" title="Data de booking prevista">{{ item.booking_date }}</span>
-                {% else %}—{% endif %}
-              </td>
-              <td>{{ item.deal_id or "—" }}</td>
-              <td>{{ item.tech_lead or "—" }}</td>
-              <td>{{ item.pm_name or "—" }}</td>
-              <td>
-                {% set status_class = {'Commit': 'commit', 'Best Case': 'best', 'Pipeline': 'pipeline', 'Upside': 'upside'}.get(item.status, 'pipeline') %}
-                <span class="mk-status mk-status-{{ status_class }}">{{ item.status }}</span>
-              </td>
-              <td class="mk-next-action">
-                {% if item.proxima_acao %}
-                {{ item.proxima_acao }}
-                {% if item.proxima_acao_data %}
-                <div><span class="mk-datecheck mk-updated" data-date="{{ item.proxima_acao_data }}"><i class="fa-regular fa-calendar fa-fw"></i>{{ item.proxima_acao_data }}</span></div>
-                {% endif %}
-                {% else %}<span class="text-muted">—</span>{% endif %}
-              </td>
-              <td class="text-center">
-                {% set score_class = 'high' if item.meddpicc_score >= 6 else ('mid' if item.meddpicc_score >= 3 else 'low') %}
-                <span class="mk-score mk-score-{{ score_class }}"
-                      title="Completude MEDDPICC — Metrics, Economic Buyer, Decision Criteria, Decision Process, Paper Process, Pain, Champion, Competition{% if item.economic_buyer %} · EB: {{ item.economic_buyer }}{% endif %}{% if item.champion %} · Champion: {{ item.champion }}{% endif %}{% if item.competition %} · Competição: {{ item.competition }}{% endif %}">
-                  {{ item.meddpicc_score }}/8
-                </span>
-                {% if item.updated_at %}
-                <div class="mk-updated" title="Última atualização{% if item.updated_by %} por {{ item.updated_by }}{% endif %}">{{ item.updated_at[:10] }}</div>
-                {% endif %}
-              </td>
-              <td class="text-center">
-                <button type="button" class="btn btn-sm btn-outline-secondary"
-                        onclick="openForecastEdit('{{ item.quote_id }}')" title="Editar forecast">
-                  <i class="fa fa-pen"></i>
-                </button>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
+          <tbody id="forecastBody"></tbody>
         </table>
       </div>
       {% else %}
@@ -572,6 +590,7 @@
     <div class="card-header d-flex align-items-center gap-2">
       <i class="fa-solid fa-table-cells" style="color:var(--cisco-bright)"></i>
       <span id="pivot-title">Forecast por Departamento</span>
+      <span class="text-muted small fw-normal ms-2">clique numa linha ou barra para ver os projetos</span>
     </div>
     <div class="card-body">
       <div id="pivot-chart-wrap" class="mb-3" style="height:200px"><canvas id="pivotChart"></canvas></div>
@@ -698,6 +717,7 @@
 const CISCO  = ['#005073','#049FD9','#00BCEB','#6cc04a','#ffbe00','#e2231a','#7B61FF','#FF6B35','#3d9970','#9b59b6'];
 const fmt    = n => new Intl.NumberFormat('en-US', {style:'currency', currency:'USD', maximumFractionDigits:0}).format(n);
 const fmtFull= n => new Intl.NumberFormat('en-US', {style:'currency', currency:'USD', minimumFractionDigits:2}).format(n);
+const esc    = s => (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 // KPI total
 document.getElementById('kpi-total').textContent = fmt({{ stats.total }});
@@ -791,36 +811,145 @@ new Chart(document.getElementById('chartDep'), {
 });
 {% endif %}
 
+// ── Ativa a sub-aba certa ao voltar de um POST (ex.: editar forecast, salvar
+// cotação do dólar) — sem isso o Bootstrap sempre reabre na primeira aba ────
+if (location.hash) {
+  const btn = document.getElementById(location.hash.replace('#', '') + '-btn');
+  if (btn) new bootstrap.Tab(btn).show();
+}
+
 // ── Forecast de Vendas ───────────────────────────────────────────────────────
 const FDATA  = {{ sales_forecast | tojson }};
 const STAGES = {{ forecast_statuses | tojson }};
 const STAGE_COLORS = { 'Commit': '#67b346', 'Best Case': '#049FD9', 'Pipeline': '#68788c', 'Upside': '#d9a400' };
+const STATUS_CLASS = { 'Commit': 'commit', 'Best Case': 'best', 'Pipeline': 'pipeline', 'Upside': 'upside' };
+const FLAG_LABELS  = { projeto_capital: 'Capital', kec: 'KEC', vbm: 'VBM', projeto_obsolescencia: 'Obsolescência', prioridade_quarter: 'Prioridade Q' };
 const SEM_ARQ_BUCKET = 'Sem produtos cadastrados';
+const FC_STATE_KEY = 'ciscoForecastFilters';
+const todayIso = new Date().toISOString().slice(0, 10);
 
-let fcView   = 'proj';               // proj | dept | arch
-let fcForn   = 'ntt';                // ntt | logicalis
-let fcStages = new Set(STAGES);      // estágios ativos
+let fcView     = 'proj';               // proj | dept | arch
+let fcForn     = 'ntt';                // ntt | logicalis
+let fcStages   = new Set(STAGES);      // estágios ativos
+let fcSearch   = '';
+let fcDept     = '';
+let fcArch     = '';
+let fcValorMin = null;
+let fcValorMax = null;
+let fcFlags    = new Set();            // flags ativas (AND entre elas)
+let fcSort     = { key: null, dir: 'desc' };
 let pivotChart = null;
 
 function fcItems() {
   return FDATA.filter(it => it.fornecedor.toLowerCase() === fcForn && fcStages.has(it.status));
 }
 
+// Busca/departamento/arquitetura/faixa de valor/flags — específicos da visão
+// Projetos, mas reaproveitados no cálculo dos tiles de total quando essa
+// visão está ativa.
+function fcApplyExtraFilters(list) {
+  if (fcSearch) {
+    const q = fcSearch.toLowerCase();
+    list = list.filter(it =>
+      it.projeto.toLowerCase().includes(q) ||
+      (it.tech_lead || '').toLowerCase().includes(q) ||
+      (it.pm_name || '').toLowerCase().includes(q)
+    );
+  }
+  if (fcDept) list = list.filter(it => it.departamento === fcDept);
+  if (fcArch) list = list.filter(it => Object.prototype.hasOwnProperty.call(it.valor_por_arquitetura, fcArch));
+  if (fcValorMin !== null) list = list.filter(it => it.valor >= fcValorMin);
+  if (fcValorMax !== null) list = list.filter(it => it.valor <= fcValorMax);
+  if (fcFlags.size) list = list.filter(it => [...fcFlags].every(f => it[f]));
+  return list;
+}
+
+function fcProjFiltered() {
+  let list = fcApplyExtraFilters(fcItems());
+  if (fcSort.key) {
+    const k = fcSort.key, dir = fcSort.dir === 'asc' ? 1 : -1;
+    list = [...list].sort((a, b) => {
+      let av = a[k], bv = b[k];
+      if (typeof av === 'string') av = av.toLowerCase();
+      if (typeof bv === 'string') bv = bv.toLowerCase();
+      if (av === bv) return 0;
+      return av > bv ? dir : -dir;
+    });
+  }
+  return list;
+}
+
 function updateTotals() {
-  const items = fcItems();
-  const total = items.reduce((s, it) => s + it.valor, 0);
-  const commit = FDATA
-    .filter(it => it.fornecedor.toLowerCase() === fcForn && (it.status === 'Commit' || it.status === 'Best Case'))
-    .reduce((s, it) => s + it.valor, 0);
+  const totalItems = fcView === 'proj' ? fcProjFiltered() : fcItems();
+  const total = totalItems.reduce((s, it) => s + it.valor, 0);
+
+  let commitBase = FDATA.filter(it => it.fornecedor.toLowerCase() === fcForn && (it.status === 'Commit' || it.status === 'Best Case'));
+  if (fcView === 'proj') commitBase = fcApplyExtraFilters(commitBase);
+  const commit = commitBase.reduce((s, it) => s + it.valor, 0);
+
   document.getElementById('forecast-total').textContent = fmtFull(total);
   document.getElementById('forecast-commit').textContent = fmtFull(commit);
 }
 
+function buildProjRowHtml(it) {
+  const flagsHtml =
+    (it.prioridade_quarter ? '<span class="mk-chip mk-chip-prio" title="Prioridade do Quarter"><i class="fa-solid fa-star fa-fw"></i>Prioridade Q</span>' : '') +
+    (it.projeto_capital ? '<span class="mk-chip mk-chip-capital">Capital</span>' : '') +
+    (it.kec ? '<span class="mk-chip mk-chip-kec">KEC</span>' : '') +
+    (it.vbm ? '<span class="mk-chip mk-chip-vbm">VBM</span>' : '') +
+    (it.projeto_obsolescencia ? '<span class="mk-chip mk-chip-obso">Obsolescência</span>' : '');
+
+  const valorIcon = it.valor_origem === 'valor_total'
+    ? '<i class="fa-solid fa-file-invoice-dollar text-muted ms-1" style="font-size:.7rem" title="Sem produtos cadastrados — usou o Valor Total (US$) de Informações Manuais"></i>'
+    : (it.valor_fallback ? '<i class="fa-solid fa-circle-info text-muted ms-1" style="font-size:.7rem" title="Algum part number sem histórico específico — usou a média geral do fornecedor"></i>' : '');
+
+  const bookingOverdue = it.booking_date && it.booking_date < todayIso;
+  const bookingHtml = it.booking_date
+    ? '<span class="mk-datecheck' + (bookingOverdue ? ' mk-overdue' : '') + '" title="Data de booking prevista' + (bookingOverdue ? ' — vencida' : '') + '">' + esc(it.booking_date) + '</span>'
+    : '—';
+
+  let proximaHtml = '<span class="text-muted">—</span>';
+  if (it.proxima_acao) {
+    const pOverdue = it.proxima_acao_data && it.proxima_acao_data < todayIso;
+    proximaHtml = esc(it.proxima_acao) + (it.proxima_acao_data
+      ? '<div><span class="mk-datecheck mk-updated' + (pOverdue ? ' mk-overdue' : '') + '"><i class="fa-regular fa-calendar fa-fw"></i>' + esc(it.proxima_acao_data) + '</span></div>'
+      : '');
+  }
+
+  const scoreClass = it.meddpicc_score >= 6 ? 'high' : (it.meddpicc_score >= 3 ? 'mid' : 'low');
+  const scoreTitle = 'Completude MEDDPICC — Metrics, Economic Buyer, Decision Criteria, Decision Process, Paper Process, Pain, Champion, Competition'
+    + (it.economic_buyer ? ' · EB: ' + esc(it.economic_buyer) : '')
+    + (it.champion ? ' · Champion: ' + esc(it.champion) : '')
+    + (it.competition ? ' · Competição: ' + esc(it.competition) : '');
+
+  const statusClass = STATUS_CLASS[it.status] || 'pipeline';
+  const quoteIdJs = it.quote_id.replace(/'/g, "\\'");
+
+  return '<tr>'
+    + '<td class="ps-3"><a class="mk-proj-link" href="/quotes/' + esc(it.quote_id) + '" title="Abrir a cotação">' + esc(it.projeto) + '</a>'
+    + '<div class="d-flex flex-wrap gap-1 mt-1">' + flagsHtml + '</div></td>'
+    + '<td class="text-end">' + fmtFull(it.valor) + valorIcon + '</td>'
+    + '<td>' + bookingHtml + '</td>'
+    + '<td>' + (it.deal_id ? esc(it.deal_id) : '—') + '</td>'
+    + '<td>' + (it.tech_lead ? esc(it.tech_lead) : '—') + '</td>'
+    + '<td>' + (it.pm_name ? esc(it.pm_name) : '—') + '</td>'
+    + '<td><span class="mk-status mk-status-' + statusClass + '">' + esc(it.status) + '</span></td>'
+    + '<td class="mk-next-action">' + proximaHtml + '</td>'
+    + '<td class="text-center"><span class="mk-score mk-score-' + scoreClass + '" title="' + scoreTitle + '">' + it.meddpicc_score + '/8</span>'
+    + (it.updated_at ? '<div class="mk-updated" title="Última atualização' + (it.updated_by ? ' por ' + esc(it.updated_by) : '') + '">' + esc(it.updated_at.slice(0, 10)) + '</div>' : '')
+    + '</td>'
+    + '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-secondary" onclick="openForecastEdit(\'' + quoteIdJs + '\')" title="Editar forecast"><i class="fa fa-pen"></i></button></td>'
+    + '</tr>';
+}
+
 function renderProjView() {
-  document.querySelectorAll('#forecastTable tbody tr[data-fornecedor]').forEach(tr => {
-    const match = tr.dataset.fornecedor === fcForn && fcStages.has(tr.dataset.status);
-    tr.style.display = match ? '' : 'none';
-  });
+  const tbody = document.getElementById('forecastBody');
+  if (!tbody) return;
+  const list = fcProjFiltered();
+  tbody.innerHTML = list.length
+    ? list.map(buildProjRowHtml).join('')
+    : '<tr><td colspan="10" class="text-muted small p-4 text-center">Nenhum projeto encontrado com os filtros atuais.</td></tr>';
+  renderActiveChips();
 }
 
 function renderPivotView() {
@@ -844,7 +973,7 @@ function renderPivotView() {
   const sorted = Object.values(rows).sort((a, b) => b.total - a.total);
   const activeStages = STAGES.filter(s => fcStages.has(s));
 
-  // Tabela pivot
+  // Tabela pivot — cada linha é clicável e leva para a visão Projetos filtrada
   const thead = document.querySelector('#pivotTable thead');
   const tbody = document.querySelector('#pivotTable tbody');
   thead.innerHTML = '<tr><th class="ps-3">' + (dim === 'dept' ? 'Departamento' : 'Arquitetura') + '</th>'
@@ -852,25 +981,30 @@ function renderPivotView() {
     + '<th class="text-end pe-3">Total</th></tr>';
   tbody.innerHTML = sorted.length
     ? sorted.map(r =>
-        '<tr><td class="ps-3 fw-semibold">' + r.label + '</td>'
+        '<tr class="mk-pivot-row" data-drill="' + esc(r.label) + '" title="Clique para ver os projetos">'
+        + '<td class="ps-3 fw-semibold">' + esc(r.label) + '</td>'
         + activeStages.map(s => '<td class="text-end">' + (r.stages[s] ? fmtFull(r.stages[s]) : '<span class="text-muted">—</span>') + '</td>').join('')
         + '<td class="text-end pe-3 fw-bold">' + fmtFull(r.total) + '</td></tr>'
       ).join('')
     : '<tr><td colspan="' + (activeStages.length + 2) + '" class="text-muted small p-3">Nenhum projeto no filtro atual.</td></tr>';
+  tbody.querySelectorAll('tr[data-drill]').forEach(tr => {
+    tr.addEventListener('click', () => fcDrillDown(tr.dataset.drill));
+  });
 
   document.getElementById('pivot-note').textContent =
     (dim === 'arch' && hasSemArq)
       ? '“' + SEM_ARQ_BUCKET + '” agrupa cotações valoradas pelo Valor Total manual (sem XLS de produtos) — sem arquitetura conhecida.'
       : '';
 
-  // Gráfico: barras horizontais empilhadas por estágio
+  // Gráfico: barras horizontais empilhadas por estágio — clicar numa barra também drilla
   document.getElementById('pivot-chart-wrap').style.height =
     Math.max(sorted.length * 38 + 40, 120) + 'px';
   if (pivotChart) pivotChart.destroy();
+  const labels = sorted.map(r => r.label);
   pivotChart = new Chart(document.getElementById('pivotChart'), {
     type: 'bar',
     data: {
-      labels: sorted.map(r => r.label),
+      labels,
       datasets: activeStages.map(s => ({
         label: s,
         data: sorted.map(r => r.stages[s] || 0),
@@ -881,6 +1015,12 @@ function renderPivotView() {
     },
     options: {
       ...baseOpts,
+      onClick: (evt, elements) => {
+        if (elements.length) fcDrillDown(labels[elements[0].index]);
+      },
+      onHover: (evt, elements) => {
+        if (evt.native) evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+      },
       plugins: {
         legend: { display: true, position: 'bottom', labels: { font: { size: 10 }, boxWidth: 12 } },
         tooltip: { callbacks: { label: ctx => ' ' + ctx.dataset.label + ': ' + fmtFull(ctx.parsed.x) } }
@@ -893,6 +1033,20 @@ function renderPivotView() {
   });
 }
 
+function fcDrillDown(label) {
+  if (fcView === 'dept') {
+    fcDept = label;
+    const sel = document.getElementById('fcDeptSelect'); if (sel) sel.value = label;
+  } else if (fcView === 'arch') {
+    fcArch = label;
+    const sel = document.getElementById('fcArchSelect'); if (sel) sel.value = label;
+  }
+  fcView = 'proj';
+  document.getElementById('fv-proj').checked = true;
+  saveState();
+  renderForecast();
+}
+
 function renderForecast() {
   const isProj = fcView === 'proj';
   document.getElementById('fc-view-proj').classList.toggle('d-none', !isProj);
@@ -901,25 +1055,113 @@ function renderForecast() {
   updateTotals();
 }
 
-// Format + destaque de datas vencidas na tabela de projetos
-document.querySelectorAll('.forecast-val').forEach(el => {
-  el.firstChild.textContent = fmtFull(parseFloat(el.dataset.val || 0)) + ' ';
-});
-const todayIso = new Date().toISOString().slice(0, 10);
-document.querySelectorAll('.mk-datecheck').forEach(el => {
-  if (el.dataset.date && el.dataset.date < todayIso) {
-    el.classList.add('mk-overdue');
-    el.title = (el.title ? el.title + ' — ' : '') + 'vencida';
+function updateSortIndicators() {
+  document.querySelectorAll('#forecastTable thead .fc-sort').forEach(th => {
+    const icon = th.querySelector('.fc-sort-arrow');
+    if (!icon) return;
+    th.classList.toggle('fc-sort-active', th.dataset.sort === fcSort.key);
+    icon.className = 'fa-solid fc-sort-arrow ' +
+      (th.dataset.sort === fcSort.key ? (fcSort.dir === 'asc' ? 'fa-sort-up' : 'fa-sort-down') : 'fa-sort');
+  });
+}
+
+function renderActiveChips() {
+  const wrap = document.getElementById('fcActiveChips');
+  if (!wrap) return;
+  const chips = [];
+  if (fcDept) chips.push(['Depto: ' + fcDept, () => {
+    fcDept = ''; document.getElementById('fcDeptSelect').value = ''; saveState(); renderForecast();
+  }]);
+  if (fcArch) chips.push(['Arquitetura: ' + fcArch, () => {
+    fcArch = ''; document.getElementById('fcArchSelect').value = ''; saveState(); renderForecast();
+  }]);
+  if (fcSearch) chips.push(['Busca: ' + fcSearch, () => {
+    fcSearch = ''; document.getElementById('fcSearch').value = ''; saveState(); renderForecast();
+  }]);
+  if (fcValorMin !== null || fcValorMax !== null) {
+    const label = 'Valor: ' + (fcValorMin !== null ? fmt(fcValorMin) : '—') + ' a ' + (fcValorMax !== null ? fmt(fcValorMax) : '—');
+    chips.push([label, () => {
+      fcValorMin = null; fcValorMax = null;
+      document.getElementById('fcValorMin').value = ''; document.getElementById('fcValorMax').value = '';
+      saveState(); renderForecast();
+    }]);
   }
-});
+  fcFlags.forEach(f => chips.push([FLAG_LABELS[f] || f, () => {
+    fcFlags.delete(f);
+    const cb = document.querySelector('.fc-flag[value="' + f + '"]'); if (cb) cb.checked = false;
+    saveState(); renderForecast();
+  }]));
+
+  wrap.innerHTML = '';
+  chips.forEach(([label, onClear]) => {
+    const span = document.createElement('span');
+    span.className = 'mk-chip mk-chip-capital mk-chip-clear';
+    span.innerHTML = esc(label) + ' <i class="fa-solid fa-xmark ms-1"></i>';
+    span.querySelector('i').addEventListener('click', onClear);
+    wrap.appendChild(span);
+  });
+}
+
+function fcPopulateSelects() {
+  const deptSel = document.getElementById('fcDeptSelect');
+  const archSel = document.getElementById('fcArchSelect');
+  if (!deptSel || !archSel) return;
+  const depts = [...new Set(FDATA.map(it => it.departamento))].sort();
+  const archs = [...new Set(FDATA.flatMap(it => Object.keys(it.valor_por_arquitetura)))].sort();
+  depts.forEach(d => deptSel.insertAdjacentHTML('beforeend', '<option value="' + esc(d) + '">' + esc(d) + '</option>'));
+  archs.forEach(a => archSel.insertAdjacentHTML('beforeend', '<option value="' + esc(a) + '">' + esc(a) + '</option>'));
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(FC_STATE_KEY, JSON.stringify({
+      view: fcView, forn: fcForn, stages: [...fcStages],
+      search: fcSearch, dept: fcDept, arch: fcArch,
+      valorMin: fcValorMin, valorMax: fcValorMax,
+      flags: [...fcFlags], sortKey: fcSort.key, sortDir: fcSort.dir,
+    }));
+  } catch (e) { /* localStorage indisponível (ex.: modo privado) — segue sem persistir */ }
+}
+
+function restoreState() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(FC_STATE_KEY) || 'null'); } catch (e) { /* ignora */ }
+  if (!saved) return;
+
+  fcView     = saved.view || 'proj';
+  fcForn     = saved.forn || 'ntt';
+  fcStages   = new Set(saved.stages && saved.stages.length ? saved.stages : STAGES);
+  fcSearch   = saved.search || '';
+  fcDept     = saved.dept || '';
+  fcArch     = saved.arch || '';
+  fcValorMin = (saved.valorMin === undefined ? null : saved.valorMin);
+  fcValorMax = (saved.valorMax === undefined ? null : saved.valorMax);
+  fcFlags    = new Set(saved.flags || []);
+  fcSort     = { key: saved.sortKey || null, dir: saved.sortDir || 'desc' };
+
+  const viewBtn = document.getElementById('fv-' + fcView);
+  if (viewBtn) viewBtn.checked = true;
+  const fornBtn = document.getElementById(fcForn === 'ntt' ? 'ff-ntt' : 'ff-logicalis');
+  if (fornBtn) fornBtn.checked = true;
+  document.querySelectorAll('#stageChips .mk-stage-chip').forEach(btn => {
+    btn.classList.toggle('active', fcStages.has(btn.dataset.stage));
+  });
+  const searchEl = document.getElementById('fcSearch'); if (searchEl) searchEl.value = fcSearch;
+  const deptEl = document.getElementById('fcDeptSelect'); if (deptEl) deptEl.value = fcDept;
+  const archEl = document.getElementById('fcArchSelect'); if (archEl) archEl.value = fcArch;
+  const minEl = document.getElementById('fcValorMin'); if (minEl) minEl.value = fcValorMin ?? '';
+  const maxEl = document.getElementById('fcValorMax'); if (maxEl) maxEl.value = fcValorMax ?? '';
+  document.querySelectorAll('.fc-flag').forEach(cb => { cb.checked = fcFlags.has(cb.value); });
+  updateSortIndicators();
+}
 
 // Listeners de filtros/visões
 if (document.getElementById('ff-ntt')) {
-  document.getElementById('ff-ntt').addEventListener('change', () => { fcForn = 'ntt'; renderForecast(); });
-  document.getElementById('ff-logicalis').addEventListener('change', () => { fcForn = 'logicalis'; renderForecast(); });
-  document.getElementById('fv-proj').addEventListener('change', () => { fcView = 'proj'; renderForecast(); });
-  document.getElementById('fv-dept').addEventListener('change', () => { fcView = 'dept'; renderForecast(); });
-  document.getElementById('fv-arch').addEventListener('change', () => { fcView = 'arch'; renderForecast(); });
+  document.getElementById('ff-ntt').addEventListener('change', () => { fcForn = 'ntt'; saveState(); renderForecast(); });
+  document.getElementById('ff-logicalis').addEventListener('change', () => { fcForn = 'logicalis'; saveState(); renderForecast(); });
+  document.getElementById('fv-proj').addEventListener('change', () => { fcView = 'proj'; saveState(); renderForecast(); });
+  document.getElementById('fv-dept').addEventListener('change', () => { fcView = 'dept'; saveState(); renderForecast(); });
+  document.getElementById('fv-arch').addEventListener('change', () => { fcView = 'arch'; saveState(); renderForecast(); });
   document.querySelectorAll('#stageChips .mk-stage-chip').forEach(btn => {
     btn.addEventListener('click', () => {
       const s = btn.dataset.stage;
@@ -929,10 +1171,51 @@ if (document.getElementById('ff-ntt')) {
       } else {
         fcStages.add(s); btn.classList.add('active');
       }
-      renderForecast();
+      saveState(); renderForecast();
     });
   });
-  renderForecast();   // estado inicial
+
+  const searchEl = document.getElementById('fcSearch');
+  if (searchEl) searchEl.addEventListener('input', function () { fcSearch = this.value.trim(); saveState(); renderForecast(); });
+  const deptEl = document.getElementById('fcDeptSelect');
+  if (deptEl) deptEl.addEventListener('change', function () { fcDept = this.value; saveState(); renderForecast(); });
+  const archEl = document.getElementById('fcArchSelect');
+  if (archEl) archEl.addEventListener('change', function () { fcArch = this.value; saveState(); renderForecast(); });
+  const minEl = document.getElementById('fcValorMin');
+  if (minEl) minEl.addEventListener('input', function () { fcValorMin = this.value === '' ? null : parseFloat(this.value); saveState(); renderForecast(); });
+  const maxEl = document.getElementById('fcValorMax');
+  if (maxEl) maxEl.addEventListener('input', function () { fcValorMax = this.value === '' ? null : parseFloat(this.value); saveState(); renderForecast(); });
+  document.querySelectorAll('.fc-flag').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) fcFlags.add(cb.value); else fcFlags.delete(cb.value);
+      saveState(); renderForecast();
+    });
+  });
+  const clearBtn = document.getElementById('fcClearFilters');
+  if (clearBtn) clearBtn.addEventListener('click', () => {
+    fcSearch = ''; fcDept = ''; fcArch = ''; fcValorMin = null; fcValorMax = null; fcFlags.clear();
+    if (searchEl) searchEl.value = '';
+    if (deptEl) deptEl.value = '';
+    if (archEl) archEl.value = '';
+    if (minEl) minEl.value = '';
+    if (maxEl) maxEl.value = '';
+    document.querySelectorAll('.fc-flag').forEach(cb => { cb.checked = false; });
+    saveState(); renderForecast();
+  });
+  document.querySelectorAll('#forecastTable thead .fc-sort').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      fcSort = fcSort.key === key
+        ? { key, dir: fcSort.dir === 'desc' ? 'asc' : 'desc' }
+        : { key, dir: key === 'projeto' ? 'asc' : 'desc' };
+      updateSortIndicators();
+      saveState(); renderForecast();
+    });
+  });
+
+  fcPopulateSelects();
+  restoreState();
+  renderForecast();   // estado inicial (default ou restaurado do localStorage)
 }
 
 function openForecastEdit(quoteId) {

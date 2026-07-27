@@ -189,6 +189,16 @@ ALTER TABLE cisco_forecast ADD COLUMN IF NOT EXISTS economic_buyer        TEXT;
 ALTER TABLE cisco_forecast ADD COLUMN IF NOT EXISTS champion              TEXT;
 ALTER TABLE cisco_forecast ADD COLUMN IF NOT EXISTS competition           TEXT;
 
+-- Override manual da cotação do dólar (Spend Analysis e Forecast de Vendas).
+-- Enquanto existir a linha (id=1), ela substitui a busca automática via API
+-- (fx_rate.get_usd_brl_rate) — ver data_store.get_effective_fx_rate.
+CREATE TABLE IF NOT EXISTS fx_rate_override (
+  id          INT PRIMARY KEY DEFAULT 1,
+  rate        NUMERIC NOT NULL,
+  updated_at  TIMESTAMP NOT NULL DEFAULT now(),
+  updated_by  TEXT
+);
+
 -- Cotações favoritadas por usuário ("Favoritos" na sidebar)
 CREATE TABLE IF NOT EXISTS favorites (
   username    TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,

@@ -1257,6 +1257,47 @@ def delete_user(username: str) -> bool:
         return cur.rowcount > 0
 
 
+def get_fx_rate_override() -> dict:
+    with db.get_cursor() as cur:
+        cur.execute("SELECT * FROM fx_rate_override WHERE id = 1")
+        row = cur.fetchone()
+    return _str_dates(dict(row)) if row else {}
+
+
+def set_fx_rate_override(rate: float, user: str) -> None:
+    with db.get_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO fx_rate_override (id, rate, updated_at, updated_by)
+            VALUES (1, %s, now(), %s)
+            ON CONFLICT (id) DO UPDATE SET
+                rate       = EXCLUDED.rate,
+                updated_at = now(),
+                updated_by = EXCLUDED.updated_by
+            """,
+            (rate, user),
+        )
+
+
+def clear_fx_rate_override() -> None:
+    with db.get_cursor(commit=True) as cur:
+        cur.execute("DELETE FROM fx_rate_override WHERE id = 1")
+
+
+def get_effective_fx_rate() -> tuple:
+    """(rate, is_live, is_manual, updated_by). Um override manual salvo em
+    fx_rate_override tem prioridade sobre a cotação automática buscada em
+    fx_rate.get_usd_brl_rate — usado tanto no Spend Analysis quanto no
+    Forecast de Vendas, que compartilham a mesma cotação do dólar."""
+    import fx_rate
+
+    override = get_fx_rate_override()
+    if override.get("rate"):
+        return float(override["rate"]), True, True, override.get("updated_by", "")
+    rate, is_live = fx_rate.get_usd_brl_rate()
+    return rate, is_live, False, ""
+
+
 def get_cisco_spend_stats() -> dict:
     """Aggregates (unit_net_price × qty) per product across all quotes, em USD.
     Produtos 'Nacional' são cotados em Real pelos distribuidores — convertidos
@@ -1276,7 +1317,7 @@ def get_cisco_spend_stats() -> dict:
 
     quotes      = load_extractions()
     annotations = load_annotations()
-    rate, rate_is_live = fx_rate.get_usd_brl_rate()
+    rate, rate_is_live, rate_is_manual, _ = get_effective_fx_rate()
 
     by_fornecedor  = {}
     by_arquitetura = {}
@@ -1312,6 +1353,7 @@ def get_cisco_spend_stats() -> dict:
         "by_department":   _sort(by_department),
         "fx_rate":         rate,
         "fx_rate_is_live": rate_is_live,
+        "fx_rate_is_manual": rate_is_manual,
     }
 
 
@@ -1588,7 +1630,6 @@ def get_sales_forecast() -> dict:
     cotação atual do dólar (fx_rate); sem produtos, cai para o Valor Total
     manual (já digitado em US$, sem precisar de conversão)."""
     import email_matcher
-    import fx_rate
 
     quotes      = load_extractions()
     annotations = load_annotations()
@@ -1597,7 +1638,7 @@ def get_sales_forecast() -> dict:
 
     discount_pivot = {(row["part_number"], row["arquitetura"]): row for row in get_discount_history()}
     vendor_avg = _vendor_avg_discount()
-    rate, rate_is_live = fx_rate.get_usd_brl_rate()
+    rate, rate_is_live, rate_is_manual, rate_updated_by = get_effective_fx_rate()
 
     items = []
     for q in quotes:
@@ -1675,8 +1716,10 @@ def get_sales_forecast() -> dict:
         "items":           items,
         "by_department":   _pivot_forecast_items(items, "departamento"),
         "by_architecture": _pivot_forecast_items(items, "valor_por_arquitetura"),
-        "fx_rate":         rate,
-        "fx_rate_is_live": rate_is_live,
+        "fx_rate":            rate,
+        "fx_rate_is_live":    rate_is_live,
+        "fx_rate_is_manual":  rate_is_manual,
+        "fx_rate_updated_by": rate_updated_by,
     }
 
 

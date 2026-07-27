@@ -70,6 +70,7 @@ def _mock_forecast_deps(monkeypatch, quotes, annotations=None, deals=None, forec
     monkeypatch.setattr(data_store, "load_cisco_forecast", lambda: forecasts or {})
     monkeypatch.setattr(data_store, "get_discount_history", lambda: discount_history or [])
     monkeypatch.setattr(data_store, "_vendor_avg_discount", lambda: vendor_avg or {})
+    monkeypatch.setattr(data_store, "get_fx_rate_override", lambda: {})
     monkeypatch.setattr(fx_rate, "get_usd_brl_rate", lambda: rate)
 
 
@@ -209,6 +210,21 @@ def test_get_sales_forecast_expoe_a_cotacao_do_dolar_usada(monkeypatch):
 
     assert result["fx_rate"] == 5.25
     assert result["fx_rate_is_live"] is False
+    assert result["fx_rate_is_manual"] is False
+
+
+def test_get_sales_forecast_override_manual_tem_prioridade_sobre_api(monkeypatch):
+    quotes = [{"id": "q1", "request_type": "Cotação", "subject": "a", "products": []}]
+    annotations = {"q1": {"fornecedor": "NTT"}}
+    _mock_forecast_deps(monkeypatch, quotes, annotations=annotations, rate=(5.25, False))
+    monkeypatch.setattr(data_store, "get_fx_rate_override",
+                         lambda: {"rate": 6.10, "updated_by": "lucas"})
+
+    result = data_store.get_sales_forecast()
+
+    assert result["fx_rate"] == 6.10
+    assert result["fx_rate_is_manual"] is True
+    assert result["fx_rate_updated_by"] == "lucas"
 
 
 # ── Conversão de moeda: Nacional (Real) → USD pela cotação atual ─────────────

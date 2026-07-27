@@ -880,13 +880,37 @@ def cisco():
         stats=data_store.get_cisco_spend_stats(),
         discount_history=data_store.get_discount_history(),
         sales_forecast=forecast_data["items"],
-        forecast_by_department=forecast_data["by_department"],
-        forecast_by_architecture=forecast_data["by_architecture"],
         fx_rate=forecast_data["fx_rate"],
         fx_rate_is_live=forecast_data["fx_rate_is_live"],
+        fx_rate_is_manual=forecast_data["fx_rate_is_manual"],
+        fx_rate_updated_by=forecast_data["fx_rate_updated_by"],
         forecast_statuses=FORECAST_STATUSES,
         distinct_names=data_store.get_distinct_names(),
     )
+
+
+@app.route("/cisco/forecast/fx-rate", methods=["POST"])
+@login_required
+def cisco_fx_rate_save():
+    if session.get("empresa") != "Cisco":
+        return "Acesso restrito a usuários Cisco.", 403
+
+    if request.form.get("action") == "clear":
+        data_store.clear_fx_rate_override()
+        flash("Cotação do dólar voltou a ser automática.", "success")
+        return redirect(url_for("cisco") + "#tab-forecast")
+
+    raw = request.form.get("rate", "").strip().replace(",", ".")
+    try:
+        rate = float(raw)
+    except ValueError:
+        rate = 0.0
+    if rate <= 0:
+        flash("Informe uma cotação válida (maior que zero).", "danger")
+    else:
+        data_store.set_fx_rate_override(rate, session["user"])
+        flash("Cotação do dólar atualizada manualmente.", "success")
+    return redirect(url_for("cisco") + "#tab-forecast")
 
 
 @app.route("/cisco/forecast/<quote_id>", methods=["POST"])
