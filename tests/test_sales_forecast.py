@@ -172,6 +172,28 @@ def test_get_sales_forecast_sem_produtos_usa_valor_total(monkeypatch):
 
     assert result["items"][0]["valor"] == 607790.32
     assert result["items"][0]["valor_origem"] == "valor_total"
+    assert result["items"][0]["produtos_sem_preco"] is False
+    assert result["items"][0]["n_produtos"] == 0
+
+
+def test_get_sales_forecast_produtos_cadastrados_sem_preco_usa_valor_total(monkeypatch):
+    """Caso real: produtos criados pela sincronização com o CCW (só part
+    number/qty/lead time, sem preço) — cai pro Valor Total manual, mas o
+    motivo exposto ao template deve deixar claro que HÁ produtos, só sem
+    preço (não confundir com 'sem produtos cadastrados')."""
+    quotes = [{
+        "id": "q1", "request_type": "Cotação", "subject": "ETC 5415",
+        "products": [_product("PN-A", 0), _product("PN-B", 0)],
+    }]
+    annotations = {"q1": {"fornecedor": "NTT", "valor_total": 607790.32}}
+    _mock_forecast_deps(monkeypatch, quotes, annotations=annotations)
+
+    item = data_store.get_sales_forecast()["items"][0]
+
+    assert item["valor"] == 607790.32
+    assert item["valor_origem"] == "valor_total"
+    assert item["produtos_sem_preco"] is True
+    assert item["n_produtos"] == 2
 
 
 def test_get_sales_forecast_com_produtos_nao_usa_valor_total(monkeypatch):

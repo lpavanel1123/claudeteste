@@ -899,9 +899,15 @@ function buildProjRowHtml(it) {
     (it.vbm ? '<span class="mk-chip mk-chip-vbm">VBM</span>' : '') +
     (it.projeto_obsolescencia ? '<span class="mk-chip mk-chip-obso">Obsolescência</span>' : '');
 
-  const valorIcon = it.valor_origem === 'valor_total'
-    ? '<i class="fa-solid fa-file-invoice-dollar text-muted ms-1" style="font-size:.7rem" title="Sem produtos cadastrados — usou o Valor Total (US$) de Informações Manuais"></i>'
-    : (it.valor_fallback ? '<i class="fa-solid fa-circle-info text-muted ms-1" style="font-size:.7rem" title="Algum part number sem histórico específico — usou a média geral do fornecedor"></i>' : '');
+  let valorIcon = '';
+  if (it.valor_origem === 'valor_total') {
+    const msg = it.produtos_sem_preco
+      ? it.n_produtos + ' produto(s) cadastrado(s) sem preço de lista — usou o Valor Total (US$) de Informações Manuais'
+      : 'Sem produtos cadastrados — usou o Valor Total (US$) de Informações Manuais';
+    valorIcon = '<i class="fa-solid fa-file-invoice-dollar text-muted ms-1" style="font-size:.7rem" title="' + esc(msg) + '"></i>';
+  } else if (it.valor_fallback) {
+    valorIcon = '<i class="fa-solid fa-circle-info text-muted ms-1" style="font-size:.7rem" title="Algum part number sem histórico específico — usou a média geral do fornecedor"></i>';
+  }
 
   const bookingOverdue = it.booking_date && it.booking_date < todayIso;
   const bookingHtml = it.booking_date

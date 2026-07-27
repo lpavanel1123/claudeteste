@@ -1662,9 +1662,15 @@ def get_sales_forecast() -> dict:
             q.get("products", []), fornecedor, discount_pivot, vendor_avg, rate
         )
 
-        # Sem produto nenhum contribuindo (comum em cotações importadas em lote,
-        # sem XLS de produtos) — cai para o Valor Total manual (Informações
-        # Manuais), que já é digitado em US$ — não precisa de conversão.
+        # Sem nenhum produto contribuindo com preço — cai para o Valor Total
+        # manual (Informações Manuais), que já é digitado em US$ — não precisa
+        # de conversão. Dois motivos distintos geram esse caso: (a) a cotação
+        # realmente não tem produtos cadastrados (comum em importação em lote
+        # sem XLS de produtos); ou (b) tem produtos, mas sem preço de lista —
+        # comum quando vieram só da sincronização com o CCW (que traz part
+        # number/qty/lead time, não preço). Distinguir os dois evita o tooltip
+        # dizer "sem produtos" quando na verdade há produtos sem preço.
+        n_produtos = len(q.get("products") or [])
         valor_origem = "produtos"
         if valor <= 0:
             valor_total_usd = ann.get("valor_total")
@@ -1688,6 +1694,8 @@ def get_sales_forecast() -> dict:
             "valor":          valor,
             "valor_fallback": used_fallback,
             "valor_origem":   valor_origem,
+            "produtos_sem_preco": valor_origem == "valor_total" and n_produtos > 0,
+            "n_produtos":     n_produtos,
             "valor_por_arquitetura": by_arch,
             "departamento":   departamento,
             "deal_id":        deal.get("deal_id", ""),
